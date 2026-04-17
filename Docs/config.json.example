@@ -1,0 +1,25 @@
+{
+  "Schema": 1,
+  "ToolSettings": {
+    "LogPath": "%LOCALAPPDATA%\\HU-NextExam-Manager\\NextExam-Manager.log",
+    "_Note_LogPath": "%VAR% Placeholder werden beim Laden expandiert",
+    "LogLevel": "INFO",
+    "UpdateCheckOnStart": true,
+    "AutoPullEnabled": false,
+    "AutoPullScheduleTime": "03:00"
+  },
+  "Schools": [
+    {
+      "Id": "example-school",
+      "DisplayName": "Example School",
+      "DomainFQDN": "school.local",
+      "DCServer": "DC01",
+      "StudentSharePath": "\\\\FILESERVER\\Share\\NextExam\\Student",
+      "TeacherSharePath": "\\\\FILESERVER\\Share\\NextExam\\Teacher",
+      "OUTargetStudent": "OU=Workstations,DC=school,DC=local",
+      "OUTargetTeacher": "OU=Workstations,DC=school,DC=local",
+      "WMIFilterStudentPattern": "LIKE 'PC-S%'",
+      "WMIFilterTeacherPattern": "LIKE 'PC-T%'"
+    }
+  ]
+}

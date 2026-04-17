@@ -1,0 +1,19 @@
+# Lokale Build-Artefakte
+*.tmp
+*.log
+*.bak
+
+# Nie im Repo: lokale DPAPI-verschluesselte Configs
+NextExamManager.cfg
+config.json
+
+# PowerShell ISE/VSCode
+*.ps1xml.bak
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Screenshots - nur maskierte Versionen im Repo
+# Docs/screenshots/
