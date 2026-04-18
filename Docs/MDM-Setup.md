@@ -2,8 +2,6 @@
 
 **Ziel:** Next-Exam MSIs werden als Win32-App in Intune ausgerollt. Bei neuen Releases aktualisiert das Tool die bestehende App (Content Version Update) - Clients bekommen das Update automatisch.
 
-**Status:** Feature geplant fuer v1.1. Die Azure-App-Registration kann bereits jetzt pro Schul-Tenant vorbereitet werden, damit v1.1 sofort einsatzbereit ist.
-
 ---
 
 ## Authentifizierungs-Modi
