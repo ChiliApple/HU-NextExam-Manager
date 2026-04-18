@@ -23,60 +23,15 @@ konfiguriert, laeuft der Rest taeglich automatisch per Scheduled Task.
 
 ## Funktionen
 
-### MSI-Verteilung via GPO (Active Directory)
-
-- **Automatischer MSI-Download** vom offiziellen Next-Exam GitHub-Release
-  (Student-MSI + Teacher-MSI getrennt)
-- **Share-Management**: Kopiert MSIs auf konfigurierte Netzwerk-Shares,
-  archiviert alte Versionen automatisch (letzte 3 behalten)
-- **GPO-Erstellung**: Legt Install-GPOs mit Startup-Script an
-  (PowerShell-basiert, msiexec /quiet), pro Rolle (Student/Teacher)
-- **Firewall-GPOs**: Erstellt Windows-Firewall-Regeln fuer Next-Exam
-  (App-Rules + optionale Port-Rules), getrennt nach Student/Teacher
-- **WMI-Filter**: Automatische Erstellung und Zuweisung von WMI-Filtern
-  zur Trennung von Student- und Teacher-PCs in derselben OU
-  (Pattern, Prefix, List oder Custom-Query)
-- **Auto-Pull**: Taeglich per Scheduled Task (SYSTEM oder User-Modus)
-  neue Versionen pruefen und verteilen — ohne manuellen Eingriff
-- **Multi-Task**: Mehrere Deploy-Konfigurationen pro Server moeglich
-  (z.B. verschiedene Schulen oder Standorte auf einem DC)
-
-### MDM-Deployment via Intune (Microsoft Graph API)
-
-- **Win32 LOB App Deployment**: Next-Exam als Win32-App in Intune deployen
-  fuer Geraete die per Autopilot/Intune gemanagt werden (kein Domain-Join)
-- **Entra ID App Registration**: In-App Setup-Wizard erstellt die benoetigte
-  Azure App Registration automatisch (Permissions, Admin Consent, Client Secret)
-- **Authentifizierung**: Client Credentials Flow (unattended) +
-  Auth Code Flow mit PKCE (interaktiv via Browser)
-- **Credential Store**: DPAPI-verschluesselte Secrets in `%APPDATA%\HU-NextExam\`
-- **IntuneWin-Packaging**: Automatischer Download von `IntuneWinAppUtil.exe`,
-  verpackt MSI in `.intunewin`-Format
-- **Chunked Upload**: Azure Blob Upload in 6 MB Bloecken fuer grosse Pakete
-- **App-Verwaltung**: Erstellen, Aktualisieren und Loeschen von Win32-Apps
-  inkl. Icon, Detection Rules und Description
-- **Gruppen-Zuweisungen**: Required + Available for enrolled devices
-- **Status-Vergleich**: Metadaten-Diff zwischen GitHub-Release und Intune-App
-  (Version, Description, Icon, Detection Rules)
-
-### Dashboard und Monitoring
-
-- **Zentrale Uebersicht**: Tool-Version, aktueller GitHub-Release, Tasks mit
-  Ampel-Status (MSI aktuell? GPOs gesetzt? Intune-Version aktuell?)
-- **Client-Status**: Pro Task zeigt das Dashboard welcher PC welche Version
-  installiert hat (via JSON-Rueckmeldung der Clients ueber Status-Share)
-- **MDM-Widget**: Zeigt GitHub-Release vs. Intune-deployed Version
-  mit farblicher Hervorhebung bei Abweichung
-
-### Allgemein
-
-- **Self-Update**: Gold-Button prueft automatisch auf neue Tool-Versionen
-  im GitHub-Repo, Update per Klick (Pull.ps1)
-- **Log-Viewer**: Live-Ansicht mit Level-Filter (DEBUG/INFO/WARN/ERROR)
-  und Volltext-Suche
-- **Splash Screen**: Zeigt Ladevorgang beim Start
-- **Portable Config**: `config.json` liegt neben dem Tool —
-  kompletter Ordner auf anderen Server kopierbar
+- MSI-Download vom offiziellen Next-Exam GitHub-Release (Student + Teacher)
+- Share-Management mit automatischer Archivierung alter Versionen
+- GPO-Erstellung: Install-GPOs (Startup-Script) + Firewall-GPOs
+- WMI-Filter fuer Student/Teacher-Trennung in derselben OU
+- Auto-Pull per Scheduled Task (taeglich, unattended)
+- MDM-Deployment: Win32 LOB App via Intune (Microsoft Graph API)
+- Entra ID App Registration per In-App Setup-Wizard
+- Dashboard mit Ampel-Status, Client-Uebersicht und MDM-Widget
+- Self-Update, Log-Viewer, Multi-Task-Konfiguration, portable Config
 
 ---
 
@@ -286,4 +241,72 @@ Startup-Script nach jedem Install-Check eine JSON-Datei zurueck:
 }
 ```
 
-Im **Dashboard** siehst du alle Clients eines Tasks m
+Im **Dashboard** siehst du alle Clients eines Tasks mit Status.
+
+**Einrichtung:**
+1. Settings → Task → **Status-Share-Pfad** eintragen (Default-Vorschlag wird
+   aus dem Student-Share abgeleitet: `<Parent>\_status`)
+2. Button **"Anlegen + ACL"** → legt Ordner an, setzt NTFS-ACL:
+   - Domain-Computers: Write + Read (Clients koennen schreiben)
+   - Domain-Admins: FullControl
+   - Vererbung deaktiviert (nur dieser Ordner)
+3. Install-GPOs neu erstellen → Startup-Script bekommt den Status-Pfad
+4. Client-Reboot → JSON wird geschrieben → im Dashboard sichtbar
+
+---
+
+## Repo-Struktur
+
+```
+HU-NextExam-Manager/
+├── HU-NextExam-Manager.ps1  # Main (WPF-UI, PS 5.1)
+├── Pull.ps1                 # Self-Update / Bootstrap
+├── Start.vbs                # Fensterloser Launcher (mit UAC-Elevation)
+├── README.md                # Diese Datei
+├── Assets/
+│   ├── icon.ico
+│   ├── icon.png
+│   └── crane_check_icon.png
+├── Docs/
+│   ├── INSTALL.md
+│   ├── MDM-Setup.md
+│   ├── CHANGELOG.md
+│   ├── NOTICE.md
+│   ├── LICENSE
+│   └── config.json.example
+├── Modules/
+│   ├── Config.psm1
+│   ├── Logging.psm1
+│   ├── MSIPull.psm1
+│   ├── MDMDeploy.psm1
+│   ├── WMIFilter.psm1
+│   ├── GPOSetup.psm1
+│   ├── AutoPull.psm1
+│   └── ClientStatus.psm1
+├── Templates/
+│   └── Startup-NextExam.ps1  # Client-Startup-Script (via GPO deployed)
+└── XAML/
+    └── MainWindow.xaml
+```
+
+---
+
+
+## Known Issues / Manuelle Nacharbeit
+
+### 1. GPO "Nicht angewendet (Leer)" nach Install-GPOs erstellen
+
+**Problem:** Nach dem Erstellen der Install-GPOs ueber das Tool zeigt `gpresult`
+die GPOs als "Nicht angewendet (Leer)" an. Die Scripts-CSE erkennt die
+programmatisch geschriebenen `scripts.ini` / `psscripts.ini` nicht als gueltig.
+
+**Workaround (manuell, pro Install-GPO):**
+1. GPMC oeffnen (`gpmc.msc`)
+2. Die betroffene GPO finden (z.B. `HU-NEXT-EXAM-Student-Install`)
+3. Rechtsklick → **Bearbeiten**
+4. Computerkonfiguration → Windows-Einstellungen → **Skripts (Starten/Herunterfahren)**
+5. **Starten** doppelklicken
+6. Das CMD-Script (`Startup-NextExam.cmd`) sollte bereits gelistet sein
+7. Einfach **OK** klicken (nichts aendern, nur bestaetigen)
+8. Editor schliessen
+9. Fuer **bei
