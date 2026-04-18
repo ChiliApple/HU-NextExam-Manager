@@ -623,7 +623,7 @@
                     </GroupBox>
 
                     <!-- Row 3: Gruppen-Zuweisung (kompakt als Expander) -->
-                    <Expander Header="Gruppen-Zuweisung (Required)" Grid.Row="3" IsExpanded="False" Foreground="#E0E0E0" Margin="0,0,0,8">
+                    <Expander Header="Gruppen-Zuweisung (Required)" Grid.Row="3" IsExpanded="True" Foreground="#E0E0E0" Margin="0,0,0,8">
                         <Grid Margin="4">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -684,7 +684,7 @@
                     </Expander>
 
                     <!-- Row 4: App-Metadaten (Expander) -->
-                    <Expander Header="App-Metadaten (optional anpassen)" Grid.Row="4" IsExpanded="False" Foreground="#E0E0E0" Margin="0,0,0,8">
+                    <Expander Header="App-Metadaten (optional anpassen)" Grid.Row="4" IsExpanded="True" Foreground="#E0E0E0" Margin="0,0,0,8">
                         <Grid Margin="10,6,10,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="120"/>
