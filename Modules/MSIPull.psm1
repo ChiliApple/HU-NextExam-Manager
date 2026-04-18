@@ -18,10 +18,16 @@ function Get-NextExamLatestRelease {
     [CmdletBinding()]
     param()
     try {
-        $r = Invoke-RestMethod -Uri $script:NextExamApiUrl -UseBasicParsing -Headers @{
-            Accept = 'application/vnd.github.v3+json'
+        $h = @{
+            Accept       = 'application/vnd.github.v3+json'
             'User-Agent' = 'HU-NextExam-Manager'
-        } -ErrorAction Stop
+        }
+        # Optional: GitHub PAT aus Config -> 5000 statt 60 API-Calls/h
+        $tok = $null
+        try { $tok = $script:Config.ToolSettings.GitHubToken } catch {}
+        if (-not $tok) { try { $tok = (Load-Config).ToolSettings.GitHubToken } catch {} }
+        if ($tok) { $h['Authorization'] = "token $tok" }
+        $r = Invoke-RestMethod -Uri $script:NextExamApiUrl -UseBasicParsing -Headers $h -ErrorAction Stop
     } catch {
         throw "GitHub-API-Fehler (Next-Exam Release): $_"
     }

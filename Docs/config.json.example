@@ -6,7 +6,8 @@
     "LogLevel": "INFO",
     "UpdateCheckOnStart": true,
     "AutoPullEnabled": false,
-    "AutoPullScheduleTime": "03:00"
+    "AutoPullScheduleTime": "03:00",
+    "GitHubToken": ""
   },
   "Schools": [
     {
