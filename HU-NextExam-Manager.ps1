@@ -176,10 +176,12 @@ try {
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <Image x:Name="imgSplash" Grid.Row="0" Width="140" Height="140" Margin="0,30,0,10" VerticalAlignment="Center" HorizontalAlignment="Center"/>
             <TextBlock Grid.Row="1" Text="HU-NextExam-Manager" FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" Margin="0,0,0,4"/>
-            <TextBlock x:Name="lblSplashVersion" Grid.Row="2" FontSize="14" Foreground="#888" HorizontalAlignment="Center" Margin="0,0,0,30"/>
+            <TextBlock x:Name="lblSplashVersion" Grid.Row="2" FontSize="14" Foreground="#888" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="3" Text="loading modules ..." FontSize="11" Foreground="#555" FontStyle="Italic" HorizontalAlignment="Center" Margin="0,0,0,24"/>
         </Grid>
     </Border>
 </Window>
@@ -207,7 +209,7 @@ try {
 
     # Splash nach 2.5s automatisch ausblenden (unabhaengig von ContentRendered)
     $script:SplashAutoTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $script:SplashAutoTimer.Interval = [TimeSpan]::FromMilliseconds(2500)
+    $script:SplashAutoTimer.Interval = [TimeSpan]::FromMilliseconds(200)
     $script:SplashAutoTimer.Add_Tick({
         $script:SplashAutoTimer.Stop()
         $script:SplashAutoTimer = $null
@@ -1763,6 +1765,40 @@ $script:btnDashRefresh.Add_Click({
         try { Refresh-MSITaskStatus } catch {}
         Set-Status 'Pruefe GPO-Status (kann ~30s dauern)...'
         try { Refresh-GPOTaskStatus } catch {}
+        # MDM-Status abfragen wenn Credentials vorhanden
+        $mdmTenant = $script:cmbMDMTenant.SelectedItem
+        if ($mdmTenant) {
+            Set-Status 'Pruefe MDM-Status (Intune)...'
+            try {
+                # Token holen (automatisch wenn Credentials existieren)
+                if (-not (Test-MDMTokenValid)) {
+                    if (Test-MDMCredentialExists -TenantId $mdmTenant.TenantId) {
+                        $script:MDMToken = Get-MDMToken -TenantId $mdmTenant.TenantId -Mode 'AppCredentials'
+                    }
+                }
+                if (Test-MDMTokenValid) {
+                    # GitHub-Version
+                    $rel = Get-NextExamLatestRelease
+                    if ($rel.Student) { $script:MDMLastCheck['StudentGH'] = $rel.Student.Version }
+                    if ($rel.Teacher) { $script:MDMLastCheck['TeacherGH'] = $rel.Teacher.Version }
+                    # Intune-Versionen
+                    foreach ($role in 'Student','Teacher') {
+                        $app = Get-NextExamIntuneApp -AccessToken $script:MDMToken.AccessToken -DisplayNameFilter "Next-Exam-$role"
+                        if ($app) {
+                            $script:MDMLastCheck["${role}Intune"] = $app.appVersion
+                            $script:MDMLastCheck["${role}App"]    = $app
+                        } else {
+                            $script:MDMLastCheck["${role}Intune"] = $null
+                            $script:MDMLastCheck["${role}App"]    = $null
+                        }
+                    }
+                    Update-MDMDashboardWidget
+                    Update-MDMAuthStatusUI 'Verbunden (App-Token)' '#107C10'
+                }
+            } catch {
+                Write-Log "Dashboard MDM-Check fehlgeschlagen: $_" -Level WARN -Source 'MDM-UI'
+            }
+        }
         Update-Dashboard
         Set-Status 'Dashboard aktualisiert'
     } finally {
@@ -1799,12 +1835,13 @@ function Update-LogView {
         $q = $script:txtLogSearch.Text
         if ($q) { $lines = $lines | Where-Object { $_ -like "*$q*" } }
 
-        # nur letzte 2000 Zeilen (Performance)
+        # nur letzte 2000 Zeilen (Performance), neueste oben
         $lines = @($lines) | Select-Object -Last 2000
+        [Array]::Reverse($lines)
         $script:txtLogContent.Text = $lines -join "`r`n"
-        # Scroll ans Ende
-        $script:txtLogContent.CaretIndex = $script:txtLogContent.Text.Length
-        $script:txtLogContent.ScrollToEnd()
+        # Scroll nach oben (neueste Eintraege zuerst)
+        $script:txtLogContent.CaretIndex = 0
+        $script:txtLogContent.ScrollToHome()
     } catch {
         $script:txtLogContent.Text = "(Fehler beim Laden: $_)"
     }
@@ -2102,7 +2139,7 @@ function Build-AppMetadata {
         developer          = $script:txtMDMDeveloper.Text
         informationUrl     = $script:txtMDMInfoUrl.Text
         installCommandLine = ($script:txtMDMInstallCmd.Text -replace 'NextExamStudent\.msi', $msiName)
-        uninstallCommandLine = $script:txtMDMUninstallCmd.Text
+        uninstallCommandLine = ($script:txtMDMUninstallCmd.Text -replace 'NextExamStudent\.msi', $msiName)
         installExperience  = ($script:cmbMDMInstallContext.SelectedItem.Content)
         setupFilePath      = $msiName
         iconPath           = $(if (Test-Path $iconFile) { $iconFile } else { $null })
@@ -2144,7 +2181,7 @@ function Refresh-MDMTenantList {
 }
 
 $script:btnMDMTenantAdd.Add_Click({
-    $name = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-Name (z.B. MeineSchule):', 'MDM-Tenant hinzufuegen', '')
+    $name = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-Name (z.B. Gym-Leoben):', 'MDM-Tenant hinzufuegen', '')
     if (-not $name) { return }
     $tid = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-ID (Directory ID aus Azure Portal):', 'MDM-Tenant hinzufuegen', '')
     if (-not $tid) { return }
@@ -2805,7 +2842,6 @@ $script:btnMDMSetupApp.Add_Click({
                         $tenantObj = Get-SelectedMDMTenant
                         if ($tenantObj -and (-not $tenantObj.ClientId -or $tenantObj.ClientId -ne $result.ClientId)) {
                             $tenantObj | Add-Member -NotePropertyName 'ClientId' -NotePropertyValue $result.ClientId -Force
-                            # Config speichern
                             try { Save-Config -Config $script:AppConfig } catch {
                                 Write-Log "Config-Speichern fehlgeschlagen: $_" -Level WARN -Source 'MDM-UI'
                             }
@@ -2915,6 +2951,7 @@ $script:btnClientRefresh.Add_Click({
 })
 
 # ========== Tool-Self-Update (Check gegen GitHub-Repo) ==========
+$script:UpdatePullToken  = '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'
 $script:UpdateRepoOwner  = 'ChiliApple'
 $script:UpdateRepoName   = 'HU-NextExam-Manager'
 $script:UpdateApiUrl     = "https://raw.githubusercontent.com/$($script:UpdateRepoOwner)/$($script:UpdateRepoName)/main/HU-NextExam-Manager.ps1"
@@ -2932,6 +2969,7 @@ function Invoke-UpdateCheck {
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         $h = @{
+            Authorization = "token $($script:UpdatePullToken)"
             'User-Agent'  = 'HU-NextExam-Manager-UpdateCheck'
         }
         $r = Invoke-WebRequest -Uri $script:UpdateApiUrl -Headers $h -UseBasicParsing -ErrorAction Stop
@@ -2968,6 +3006,7 @@ function Invoke-UpdateCheck {
 
 $script:btnUpdate.Add_Click({
     if (-not $script:UpdateAvailable) {
+        # Kein Update bekannt - erneut pruefen
         $script:btnUpdate.Content = 'Pruefe...'
         try { Invoke-UpdateCheck } catch {}
         return
@@ -2983,4 +3022,118 @@ $script:btnUpdate.Add_Click({
     }
     try {
         $exe = (Get-Command powershell.exe).Source
-        Start-Process $exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-NoExit',
+        Start-Process $exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-File',$pullScript | Out-Null
+        Set-Status 'Pull laeuft in separatem Fenster. Tool schliesst in 3s.'
+        Start-Sleep -Seconds 3
+        $script:Window.Close()
+    } catch {
+        [System.Windows.MessageBox]::Show("Update-Start fehlgeschlagen:`n$_", 'Fehler', 'OK', 'Error') | Out-Null
+    }
+})
+
+# --- Window-Geometrie aus Config anwenden (vor ShowDialog) ---
+try {
+    $wcfg = $script:Config.ToolSettings.Window
+    if ($wcfg -and $wcfg.Width -and $wcfg.Height -and [double]$wcfg.Width -gt 200 -and [double]$wcfg.Height -gt 150) {
+        $script:Window.WindowStartupLocation = 'Manual'
+        if ($null -ne $wcfg.Left)   { $script:Window.Left   = [double]$wcfg.Left }
+        if ($null -ne $wcfg.Top)    { $script:Window.Top    = [double]$wcfg.Top }
+        $script:Window.Width  = [double]$wcfg.Width
+        $script:Window.Height = [double]$wcfg.Height
+        if ($wcfg.State -eq 'Maximized') { $script:Window.WindowState = 'Maximized' }
+    }
+} catch { Write-Log -Message "Window-Load: $_" -Level WARN -Source 'UI' }
+
+# --- Fenstergeometrie beim Schliessen speichern ---
+$script:Window.Add_Closing({
+    try {
+        $st = [string]$script:Window.WindowState
+        if ($st -eq 'Maximized') {
+            $b = $script:Window.RestoreBounds
+            $l = $b.Left; $t = $b.Top; $w = $b.Width; $h = $b.Height
+        } else {
+            $l = $script:Window.Left; $t = $script:Window.Top
+            $w = $script:Window.Width; $h = $script:Window.Height
+        }
+        if (-not ($script:Config.ToolSettings.PSObject.Properties.Name -contains 'Window')) {
+            $script:Config.ToolSettings | Add-Member -NotePropertyName 'Window' -NotePropertyValue ([PSCustomObject]@{}) -Force
+        }
+        $script:Config.ToolSettings.Window = [PSCustomObject]@{
+            Left = $l; Top = $t; Width = $w; Height = $h; State = $st
+        }
+        Save-Config -Config $script:Config
+    } catch {
+        Write-Log -Message "Window-Save: $_" -Level WARN -Source 'UI'
+    }
+})
+
+# --- Window.Loaded ---
+$script:Window.Add_Loaded({
+    try {
+        # ABSOLUT MINIMAL: nur das was sofort da ist
+        Refresh-TaskList
+        Load-TaskToForm $null
+        try { Refresh-ClientTaskDropdown } catch {}
+        try {
+            $script:txtAutoPullTime.Text = if ($script:Config.ToolSettings.AutoPullScheduleTime) { $script:Config.ToolSettings.AutoPullScheduleTime } else { '03:00' }
+            $pr = if ($script:Config.ToolSettings.AutoPullPrincipal) { $script:Config.ToolSettings.AutoPullPrincipal } else { 'System' }
+            if ($pr -eq 'User') { $script:rbAutoPullUser.IsChecked = $true } else { $script:rbAutoPullSystem.IsChecked = $true }
+            Update-AutoPullStatusDisplay
+        } catch {}
+        Set-Status "Bereit - Tabs ueber 'Status aktualisieren' manuell laden"
+        Hide-LoadingOverlay
+        # Hinweis wenn nicht elevated (GPO-Operationen brauchen Admin)
+        try {
+            if (-not (Test-IsElevated)) {
+                Set-Status "WARNUNG: Tool laeuft NICHT als Admin - GPO-Operationen werden scheitern"
+                [System.Windows.MessageBox]::Show(
+                    "Das Tool laeuft OHNE lokale Admin-Rechte.`n`n" +
+                    "GPO-Erstellen, -Entfernen, -Verknuepfen und FW-GPO-Rules werden mit " +
+                    "'Zugriff verweigert' (E_ACCESSDENIED) fehlschlagen.`n`n" +
+                    "Empfehlung: Tool ueber Start.vbs starten (bringt UAC-Prompt automatisch) " +
+                    "oder PowerShell als Administrator oeffnen und dann HU-NextExam-Manager.ps1 starten.",
+                    "Admin-Rechte empfohlen", 'OK', 'Warning') | Out-Null
+            }
+        } catch {}
+        # Update-Check (schnell) + Log-View - async
+        $script:Window.Dispatcher.BeginInvoke([Action]{
+            try { Update-LogView } catch {}
+            try { Invoke-UpdateCheck } catch {}
+        }, [System.Windows.Threading.DispatcherPriority]::Background) | Out-Null
+    } catch {
+        Write-Log -Message "Loaded-Fehler: $_" -Level ERROR -Source 'UI'
+        [System.Windows.MessageBox]::Show("Startfehler: $_", 'Fehler', 'OK', 'Error') | Out-Null
+    }
+})
+
+# --- Start ---
+try {
+    # --- Splash Fade-Out Fallback bei ContentRendered (falls AutoTimer noch nicht gefeuert) ---
+$script:Window.Add_ContentRendered({
+    if ($script:SplashAutoTimer) {
+        $script:SplashAutoTimer.Stop()
+        $script:SplashAutoTimer = $null
+    }
+    if ($script:SplashWindow) {
+        try {
+            $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(1.0, 0.0, (New-Object System.Windows.Duration ([TimeSpan]::FromMilliseconds(500))))
+            $fade.Add_Completed({
+                try { $script:SplashWindow.Close() } catch {}
+                $script:SplashWindow = $null
+            })
+            $script:SplashWindow.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+        } catch {
+            try { $script:SplashWindow.Close() } catch {}
+            $script:SplashWindow = $null
+        }
+    }
+})
+
+$script:Window.ShowDialog()
+} catch {
+    Write-Log -Message "Fatal: $_" -Level ERROR -Source 'Main'
+    [System.Windows.MessageBox]::Show("Fehler: $_", 'HU-NextExam-Manager', 'OK', 'Error') | Out-Null
+}
+
+Write-Log -Message "HU-NextExam-Manager beendet" -Level INFO -Source 'Main'
+try { if ($script:Mutex) { $script:Mutex.ReleaseMutex(); $script:Mutex.Dispose() } } catch {}

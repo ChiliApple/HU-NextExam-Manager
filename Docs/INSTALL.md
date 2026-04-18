@@ -14,8 +14,7 @@ Als Admin in PowerShell (KEINE ISE):
 ```powershell
 $d = Join-Path $env:USERPROFILE 'Desktop\HU-NextExam-Manager'
 New-Item -ItemType Directory -Path $d -Force | Out-Null
-Invoke-WebRequest "https://api.github.com/repos/ChiliApple/HU-NextExam-Manager/contents/Pull.ps1" `
-    -Headers @{Accept='application/vnd.github.v3.raw'; 'User-Agent'='HU-NextExam-Manager'} `
+Invoke-WebRequest "https://raw.githubusercontent.com/ChiliApple/HU-NextExam-Manager/main/Pull.ps1" `
     -UseBasicParsing -OutFile (Join-Path $d 'Pull.ps1')
 cd $d; .\Pull.ps1
 ```
