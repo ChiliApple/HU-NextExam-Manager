@@ -104,6 +104,12 @@ unten die **Tasks-Uebersicht** mit Ampel-Status (MSI aktuell? GPOs gesetzt?).
 Intune Win32-App-Deployment via Microsoft Graph API fuer Geraeteinitiative-Notebooks
 (Autopilot/Intune-managed, kein Domain-Join).
 
+> **Wichtig:** Vor dem erstmaligen **"App einrichten"** muss einmal die
+> **Admin-Anmeldung** (Radio-Button) durchgefuehrt werden. Dabei wird der
+> Admin Consent fuer "Microsoft Graph Command Line Tools" im Tenant erteilt.
+> Checkbox **"Consent on behalf of your organization"** aktivieren!
+> Danach kann auf App-Credentials (automatisch) umgeschaltet werden.
+
 - **Entra ID App Registration**: In-App Setup erstellt automatisch die benoetigte
   App Registration im Tenant (inkl. Permissions, Admin Consent, Client Secret)
 - **Auth**: Client Credentials Flow (unattended) + Auth Code Flow mit PKCE (interactive)
