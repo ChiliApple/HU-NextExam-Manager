@@ -2969,7 +2969,6 @@ function Invoke-UpdateCheck {
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         $h = @{
-            Authorization = "token $($script:UpdatePullToken)"
             'User-Agent'  = 'HU-NextExam-Manager-UpdateCheck'
         }
         $r = Invoke-WebRequest -Uri $script:UpdateApiUrl -Headers $h -UseBasicParsing -ErrorAction Stop
