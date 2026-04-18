@@ -18,8 +18,8 @@ Write-Host "Zielordner: $Target"          -ForegroundColor Gray
 
 if (-not (Test-Path $Target)) { New-Item -ItemType Directory -Path $Target -Force | Out-Null }
 
+# API-Header nur fuer Tree-Listing (2 Calls), Downloads ueber raw.githubusercontent.com (kein Rate-Limit)
 $HApi = @{ Accept = 'application/vnd.github.v3+json'; 'User-Agent' = 'HU-NextExam-Manager-Pull' }
-$HRaw = @{ Accept = 'application/vnd.github.v3.raw';  'User-Agent' = 'HU-NextExam-Manager-Pull' }
 
 try {
     $ref = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/git/refs/heads/$Branch" -Headers $HApi
@@ -41,8 +41,9 @@ foreach ($f in $files) {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     Write-Host ("  {0,-50} ... " -f $f.path) -NoNewline
     try {
-        $u = "https://api.github.com/repos/$Owner/$Repo/contents/$($f.path)?ref=$Branch"
-        Invoke-WebRequest $u -Headers $HRaw -UseBasicParsing -OutFile $local
+        # Download via raw.githubusercontent.com — zaehlt NICHT gegen API-Rate-Limit
+        $u = "https://raw.githubusercontent.com/$Owner/$Repo/$sha/$($f.path)"
+        Invoke-WebRequest $u -UseBasicParsing -OutFile $local
         Write-Host "OK ($((Get-Item $local).Length) bytes)" -ForegroundColor Green
         $ok++
     } catch { Write-Host "FEHLER: $_" -ForegroundColor Red; $fail++ }

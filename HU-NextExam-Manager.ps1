@@ -2917,7 +2917,7 @@ $script:btnClientRefresh.Add_Click({
 # ========== Tool-Self-Update (Check gegen GitHub-Repo) ==========
 $script:UpdateRepoOwner  = 'ChiliApple'
 $script:UpdateRepoName   = 'HU-NextExam-Manager'
-$script:UpdateApiUrl     = "https://api.github.com/repos/$($script:UpdateRepoOwner)/$($script:UpdateRepoName)/contents/HU-NextExam-Manager.ps1?ref=main"
+$script:UpdateApiUrl     = "https://raw.githubusercontent.com/$($script:UpdateRepoOwner)/$($script:UpdateRepoName)/main/HU-NextExam-Manager.ps1"
 $script:UpdateAvailable  = $false
 $script:UpdateRemoteVer  = ''
 
@@ -2932,7 +2932,6 @@ function Invoke-UpdateCheck {
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         $h = @{
-            Accept        = 'application/vnd.github.v3.raw'
             'User-Agent'  = 'HU-NextExam-Manager-UpdateCheck'
         }
         $r = Invoke-WebRequest -Uri $script:UpdateApiUrl -Headers $h -UseBasicParsing -ErrorAction Stop

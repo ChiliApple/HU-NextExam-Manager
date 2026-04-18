@@ -67,6 +67,9 @@ Invoke-WebRequest "https://api.github.com/repos/ChiliApple/HU-NextExam-Manager/c
 cd $d; .\Pull.ps1
 ```
 
+> **Hinweis:** Downloads laufen ueber `raw.githubusercontent.com` (kein API-Rate-Limit).
+> Nur das Tree-Listing braucht 2 API-Calls pro Pull.
+
 ### Starten
 
 Doppelklick auf **Start.vbs** - triggert UAC-Prompt (Tool braucht Admin fuer GPO),
