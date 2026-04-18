@@ -40,17 +40,26 @@ Welcher Modus verwendet wird, waehlst du im MDM-Tab per Radio-Button.
 
 1. Tool starten, **MDM-Tab** oeffnen
 2. **"+ Tenant"** — Namen eingeben
-3. **"App einrichten"** klicken
-4. Bestaetigen — Browser oeffnet sich, mit Global Admin anmelden
-5. Das Tool erstellt automatisch:
+3. **Radio-Button auf "Admin-Anmeldung (diese Session)"** umschalten
+4. **"Verbinden"** klicken — Browser oeffnet sich, mit **Global Admin** anmelden
+5. Im Browser-Dialog: Checkbox **"Consent on behalf of your organization"** aktivieren → **Accept**
+6. Zurueck im Tool: Status zeigt "Verbunden (Admin-Token)"
+7. Jetzt **"App einrichten"** klicken
+8. Bestaetigen — das Tool erstellt automatisch die App Registration
+9. Das Tool erstellt automatisch:
    - Entra ID App Registration (`HU-NextExam-Manager-MDM`)
    - Public Client Konfiguration (PKCE, localhost Redirect URIs)
    - Application Permissions: `DeviceManagementApps.ReadWrite.All`, `Group.Read.All`
    - Delegated Permissions: `DeviceManagementApps.ReadWrite.All`, `Group.Read.All`
    - Admin Consent
    - Client Secret (24 Monate)
-6. Credentials werden automatisch DPAPI-verschluesselt gespeichert
-7. **"Verbinden"** — fertig
+10. Credentials werden automatisch DPAPI-verschluesselt gespeichert
+11. Radio-Button zurueck auf **"App-Credentials (automatisch)"** → **"Verbinden"** — fertig
+
+> **Warum zuerst Admin-Anmeldung?** Das "App einrichten" braucht Graph-API-Rechte
+> (Application.ReadWrite.All) um die App Registration zu erstellen. Diese Rechte
+> muessen ueber den Admin Consent Dialog im Browser erteilt werden. Ohne diesen
+> Schritt schlaegt die App-Erstellung mit "consent_required" fehl.
 
 ### Option 2: Manuell via Azure Portal
 
