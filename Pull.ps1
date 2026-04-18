@@ -18,8 +18,26 @@ Write-Host "Zielordner: $Target"          -ForegroundColor Gray
 
 if (-not (Test-Path $Target)) { New-Item -ItemType Directory -Path $Target -Force | Out-Null }
 
-# API-Header nur fuer Tree-Listing (2 Calls), Downloads ueber raw.githubusercontent.com (kein Rate-Limit)
+# Token aus config.json lesen (falls vorhanden) -> 5000 statt 60 API-Calls/h
+$GitHubToken = $null
+$cfgPath = Join-Path $Target 'config.json'
+if (Test-Path $cfgPath) {
+    try {
+        $cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($cfg.ToolSettings.GitHubToken) {
+            $GitHubToken = $cfg.ToolSettings.GitHubToken
+            Write-Host "GitHub-Token: aus config.json (5000 Calls/h)" -ForegroundColor Green
+        }
+    } catch {}
+}
+if (-not $GitHubToken) {
+    Write-Host "GitHub-Token: keiner konfiguriert (60 Calls/h Limit)" -ForegroundColor Yellow
+    Write-Host "  Tipp: In config.json unter ToolSettings 'GitHubToken' eintragen" -ForegroundColor Yellow
+}
+
+# API-Header (2 Calls fuer Tree-Listing), Downloads ueber raw.githubusercontent.com (kein Rate-Limit)
 $HApi = @{ Accept = 'application/vnd.github.v3+json'; 'User-Agent' = 'HU-NextExam-Manager-Pull' }
+if ($GitHubToken) { $HApi['Authorization'] = "token $GitHubToken" }
 
 try {
     $ref = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/git/refs/heads/$Branch" -Headers $HApi
