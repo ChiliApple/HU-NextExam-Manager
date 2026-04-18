@@ -2996,10 +2996,12 @@ function Invoke-UpdateCheck {
             }
         } else {
             $script:btnUpdate.Content   = 'Update-Check fehl'
+            $script:btnUpdate.IsEnabled = $true
             Write-Log -Message 'Update-Check: Regex ohne Match' -Level WARN -Source 'Update'
         }
     } catch {
-        $script:btnUpdate.Content = 'Offline'
+        $script:btnUpdate.Content   = 'Offline'
+        $script:btnUpdate.IsEnabled = $true
         Write-Log -Message "Update-Check-Fehler: $_" -Level WARN -Source 'Update'
     }
 }

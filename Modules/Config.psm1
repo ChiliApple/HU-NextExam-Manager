@@ -45,7 +45,7 @@ function Get-DefaultConfig {
             DefaultPublisher     = 'Bildungsportal'
             DefaultDeveloper     = 'Mag. Thomas Michael Weissel'
             DefaultInstallCmd    = 'msiexec /i {MSI} /qn'
-            DefaultUninstallCmd  = 'msiexec /x NextExamStudent.msi /qn'
+            DefaultUninstallCmd  = 'msiexec /x {PRODUCT-CODE} /qn'
             DefaultInstallContext = 'system'
         }
     }
