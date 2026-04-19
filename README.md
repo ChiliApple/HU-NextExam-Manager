@@ -323,4 +323,4 @@ programmatisch geschriebenen `scripts.ini` / `psscripts.ini` nicht als gueltig.
 6. Das CMD-Script (`Startup-NextExam.cmd`) sollte bereits gelistet sein
 7. Einfach **OK** klicken (nichts aendern, nur bestaetigen)
 8. Editor schliessen
-9. Fuer **bei
+9. Fuer **beide** Install-GPOs wiederholen (Student + Teacher)
