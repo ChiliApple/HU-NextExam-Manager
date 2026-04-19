@@ -18,7 +18,8 @@ can have significant impact on school IT infrastructure.
 If you discover a security vulnerability, please report it responsibly:
 
 1. **Do NOT open a public GitHub Issue**
-2. Email: **chilifotos@gmail.com** with subject `[SECURITY] HU-NextExam-Manager`
+2. Use [GitHub Security Advisories](https://github.com/ChiliApple/HU-NextExam-Manager/security/advisories/new) (preferred)
+   or open a private issue via GitHub
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce
