@@ -1,5 +1,10 @@
 # HU-NextExam-Manager <img src="Assets/crane_check_icon.png" alt="Logo" width="48" align="top"/>
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
+[![Latest Release](https://img.shields.io/github/v/release/ChiliApple/HU-NextExam-Manager)](https://github.com/ChiliApple/HU-NextExam-Manager/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/ChiliApple/HU-NextExam-Manager/total)](https://github.com/ChiliApple/HU-NextExam-Manager/releases)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/windows)
