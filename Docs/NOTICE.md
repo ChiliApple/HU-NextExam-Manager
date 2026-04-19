@@ -3,17 +3,17 @@
 ## Next-Exam
 
 "Next-Exam" ist Software und eingetragenes Kennzeichen des **Bildungsministeriums
-Oesterreich / Bildungsportal** bzw. des jeweiligen Rechtsinhabers. Dieses Tool
+Österreich / Bildungsportal** bzw. des jeweiligen Rechtsinhabers. Dieses Tool
 ("HU-NextExam-Manager") steht in keinerlei offizieller Verbindung mit dem
 Bildungsportal oder den Next-Exam-Entwicklern und ist ein **inoffizielles
 Drittanbieter-Hilfsmittel**.
 
 ### Was dieses Tool tut
 
-- Laedt **ausschliesslich offiziell veroeffentlichte MSI-Installer** direkt
+- Lädt **ausschliesslich offiziell veröffentlichte MSI-Installer** direkt
   vom offiziellen Next-Exam GitHub-Release herunter
   (https://github.com/Bildungsportal/next-exam/releases)
-- Kopiert die unveraenderten MSIs in vom Administrator konfigurierte
+- Kopiert die unveränderten MSIs in vom Administrator konfigurierte
   UNC-Shares der eigenen Organisation
 - Erstellt Gruppenrichtlinien zur Verteilung dieser offiziellen Installer
   per `msiexec /i` (Standard Windows-Installer-Mechanismus)
@@ -23,25 +23,25 @@ Drittanbieter-Hilfsmittel**.
 - Verteilt keine Next-Exam-Binaries als Teil dieses Repositories
 - Modifiziert keine MSI-Dateien
 - Umgeht keine Lizenzbestimmungen oder Update-Mechanismen der Next-Exam Software
-- Nimmt keine Aenderungen an installierten Next-Exam-Kopien vor (ausserhalb
+- Nimmt keine Änderungen an installierten Next-Exam-Kopien vor (ausserhalb
   des offiziellen msiexec-Upgrade-Pfads)
-- Bietet keinen Support fuer die Next-Exam-Software selbst
+- Bietet keinen Support für die Next-Exam-Software selbst
 
-### Nutzungsrechte fuer Next-Exam
+### Nutzungsrechte für Next-Exam
 
 Der Einsatz der Next-Exam-Software durch die Administrator-Organisation muss
 im Einklang mit den **Lizenzbedingungen von Next-Exam / Bildungsportal**
-erfolgen. Dieses Tool aendert daran nichts - es automatisiert lediglich die
+erfolgen. Dieses Tool ändert daran nichts - es automatisiert lediglich die
 Verteilung der offiziellen Installer innerhalb einer bereits lizenzierten
-Umgebung (typischerweise oesterreichische Bildungseinrichtungen).
+Umgebung (typischerweise österreichische Bildungseinrichtungen).
 
 Next-Exam ist im Release-Repository unter der dort angegebenen Lizenz
-veroeffentlicht. Dieses Tool respektiert diese Lizenz vollstaendig und leitet
+veröffentlicht. Dieses Tool respektiert diese Lizenz vollständig und leitet
 die Installer nicht weiter.
 
 ## GitHub API
 
-Zugriff auf GitHub-Releases und GitHub-Content erfolgt ueber die offizielle
+Zugriff auf GitHub-Releases und GitHub-Content erfolgt über die offizielle
 [GitHub REST API](https://docs.github.com/en/rest). Rate-Limits und Terms of
 Service gelten.
 
@@ -55,15 +55,15 @@ jeweiligen OS-Installation.
 
 Verweise auf Next-Exam, Microsoft, GitHub, Azure, Intune und weitere
 Marken dienen ausschliesslich der Beschreibung der technischen
-Interoperabilitaet und stellen keine Herstellererklaerung, kein Sponsoring
+Interoperabilität und stellen keine Herstellererklärung, kein Sponsoring
 und keine Zusammenarbeit dar.
 
 ## Kontakt / Haftung
 
 Dieses Tool wird unter der **MIT License** bereitgestellt (siehe `LICENSE`
-im Root). Der Autor uebernimmt keine Haftung fuer:
+im Root). Der Autor übernimmt keine Haftung für:
 - Fehler in Konfigurationen die durch das Tool in AD/GPO vorgenommen werden
-- Ausfaelle der Next-Exam-Services durch fehlerhafte Versionen
+- Ausfälle der Next-Exam-Services durch fehlerhafte Versionen
 - Policy-Verletzungen der Administrator-Organisation beim Einsatz des Tools
 
 Jeder Einsatz geschieht auf eigene Verantwortung des Administrators.

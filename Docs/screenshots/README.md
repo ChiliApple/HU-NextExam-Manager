@@ -1,6 +1,6 @@
 # Screenshots
 
-Beispiel-Screenshots des Tools mit ausgemaskierter Schul-Identitaet.
+Beispiel-Screenshots des Tools mit ausgemaskierter Schul-Identität.
 
 ## Dateien
 
@@ -12,5 +12,5 @@ Beispiel-Screenshots des Tools mit ausgemaskierter Schul-Identitaet.
 ## Erstellt via
 
 - OCR (Tesseract) auf invertiertem Bild
-- Schulspezifische Begriffe mit schwarzer Box ueberdeckt
+- Schulspezifische Begriffe mit schwarzer Box überdeckt
 - Python `PIL.ImageDraw.rectangle`

@@ -1,9 +1,9 @@
 # HU-NextExam-Manager
 
-WPF-Tool (PowerShell 5.1) fuer die automatische Verwaltung von Next-Exam Versionen
+WPF-Tool (PowerShell 5.1) für die automatische Verwaltung von Next-Exam Versionen
 in Active-Directory-Umgebungen und via Intune/MDM (Microsoft Graph API).
 
-**Inoffizielles Drittanbieter-Tool**. Siehe `Docs/NOTICE.md` fuer Trademark-
+**Inoffizielles Drittanbieter-Tool**. Siehe `Docs/NOTICE.md` für Trademark-
 und Nutzungsrechte-Hinweise.
 
 ## Funktionen
@@ -18,9 +18,9 @@ und Nutzungsrechte-Hinweise.
   - Entra ID App Registration per In-App Setup-Wizard
   - Client Credentials Flow + Auth Code Flow mit PKCE
   - Chunked Azure Blob Upload, Win32 App CRUD, Gruppen-Zuweisungen
-- **Auto-Pull:** Scheduled Task fuer taegliche MSI-Updates (SYSTEM oder User)
+- **Auto-Pull:** Scheduled Task für tägliche MSI-Updates (SYSTEM oder User)
 - **Self-Update:** Tool aktualisiert sich via Pull.ps1 aus dem Repo
-- **Dashboard + Log-Viewer** fuer Einsatzbereit-Ampel und Troubleshooting
+- **Dashboard + Log-Viewer** für Einsatzbereit-Ampel und Troubleshooting
 
 ## Anforderungen
 

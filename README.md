@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/ChiliApple/HU-NextExam-Manager)](https://github.com/ChiliApple/HU-NextExam-Manager/releases)
 
 
-WPF-Tool (PowerShell 5.1) fuer die automatische Verteilung und Verwaltung von
+WPF-Tool (PowerShell 5.1) für die automatische Verteilung und Verwaltung von
 [Next-Exam](https://github.com/Bildungsportal/next-exam) in Active-Directory-Umgebungen
 und via Intune/MDM (Microsoft Graph API).
 
@@ -25,18 +25,18 @@ und via Intune/MDM (Microsoft Graph API).
 In einer typischen Schulumgebung braucht jede Next-Exam-Version manuelle Arbeit:
 MSI herunterladen, auf Shares kopieren, GPOs pflegen, Firewall-Regeln setzen,
 WMI-Filter konfigurieren. Das Tool automatisiert den gesamten Prozess — einmal
-konfiguriert, laeuft der Rest taeglich automatisch per Scheduled Task.
+konfiguriert, läuft der Rest täglich automatisch per Scheduled Task.
 
 ## Funktionen
 
 - MSI-Download vom offiziellen Next-Exam GitHub-Release (Student + Teacher)
 - Share-Management mit automatischer Archivierung alter Versionen
 - GPO-Erstellung: Install-GPOs (Startup-Script) + Firewall-GPOs
-- WMI-Filter fuer Student/Teacher-Trennung in derselben OU
-- Auto-Pull per Scheduled Task (taeglich, unattended)
+- WMI-Filter für Student/Teacher-Trennung in derselben OU
+- Auto-Pull per Scheduled Task (täglich, unattended)
 - MDM-Deployment: Win32 LOB App via Intune (Microsoft Graph API)
 - Entra ID App Registration per In-App Setup-Wizard
-- Dashboard mit Ampel-Status, Client-Uebersicht und MDM-Widget
+- Dashboard mit Ampel-Status, Client-Übersicht und MDM-Widget
 - Self-Update, Log-Viewer, Multi-Task-Konfiguration, portable Config
 
 ---
@@ -52,12 +52,12 @@ konfiguriert, laeuft der Rest taeglich automatisch per Scheduled Task.
 - RSAT-Module: `GroupPolicy`, `ActiveDirectory`, `NetSecurity`
 - Domain-Admin-Konto (oder delegierte GPO-Rechte)
 
-**MDM-Deployment (Intune) — zusaetzlich:**
+**MDM-Deployment (Intune) — zusätzlich:**
 
 - Microsoft 365 Tenant mit Intune-Lizenzierung
 - Globaler Administrator oder Intune Administrator Rolle
-  (fuer Entra ID App Registration + Admin Consent)
-- Intune-gemanagte Geraete (Autopilot oder manuell enrolled)
+  (für Entra ID App Registration + Admin Consent)
+- Intune-gemanagte Geräte (Autopilot oder manuell enrolled)
 - Internetzugang vom Admin-Rechner (Graph API + Azure Blob Upload)
 
 ### Bootstrap-Install
@@ -72,29 +72,29 @@ Invoke-WebRequest "https://raw.githubusercontent.com/ChiliApple/HU-NextExam-Mana
 cd $d; .\Pull.ps1
 ```
 
-> **Hinweis:** Downloads laufen ueber `raw.githubusercontent.com` (kein API-Rate-Limit).
+> **Hinweis:** Downloads laufen über `raw.githubusercontent.com` (kein API-Rate-Limit).
 > Nur das Tree-Listing braucht 2 API-Calls pro Pull.
 
 ### Starten
 
-Doppelklick auf **Start.vbs** - triggert UAC-Prompt (Tool braucht Admin fuer GPO),
-laeuft dann fensterlos und das Tool-Fenster kommt nach ~3 Sekunden.
+Doppelklick auf **Start.vbs** - triggert UAC-Prompt (Tool braucht Admin für GPO),
+läuft dann fensterlos und das Tool-Fenster kommt nach ~3 Sekunden.
 
 ### Update
 
-Im Tool: **Gold-Update-Button** oben rechts, wenn neue Version verfuegbar.
-Oder manuell `.\Pull.ps1` ausfuehren (Tool vorher schliessen).
+Im Tool: **Gold-Update-Button** oben rechts, wenn neue Version verfügbar.
+Oder manuell `.\Pull.ps1` ausführen (Tool vorher schliessen).
 
 ---
 
-## Die Oberflaeche
+## Die Oberfläche
 
 Das Tool hat **sechs Tabs**:
 
 ### Dashboard
-Die zentrale Uebersicht. Zeigt oben Tool-Info + den aktuellen GitHub-Release,
+Die zentrale Übersicht. Zeigt oben Tool-Info + den aktuellen GitHub-Release,
 in der Mitte die **Clients** pro Task (welcher PC hat welche Version installiert?),
-unten die **Tasks-Uebersicht** mit Ampel-Status (MSI aktuell? GPOs gesetzt?).
+unten die **Tasks-Übersicht** mit Ampel-Status (MSI aktuell? GPOs gesetzt?).
 
 ### MSI Pull
 - Klick **"Release abfragen"** → Tool holt aktuelle Next-Exam Version von GitHub
@@ -102,27 +102,27 @@ unten die **Tasks-Uebersicht** mit Ampel-Status (MSI aktuell? GPOs gesetzt?).
 - **Task markieren + "Auswahl aktualisieren"** → Download MSIs einmal nach TEMP,
   dann Copy auf den Student/Teacher-Share des Tasks. Alte MSIs landen in `_archive\`
   (nur die letzten 3 werden aufgehoben)
-- **Auto-Pull-Checkbox**: Scheduled Task registrieren der taeglich laeuft
-  - **SYSTEM** = laeuft ohne Anmeldung, braucht Machine-Account-Rechte auf Shares
-  - **User** = laeuft nur bei Anmeldung, holt verpasste Zeiten beim Login nach
+- **Auto-Pull-Checkbox**: Scheduled Task registrieren der täglich läuft
+  - **SYSTEM** = läuft ohne Anmeldung, braucht Machine-Account-Rechte auf Shares
+  - **User** = läuft nur bei Anmeldung, holt verpasste Zeiten beim Login nach
 
 ### MDM Deploy
-Intune Win32-App-Deployment via Microsoft Graph API fuer Geraeteinitiative-Notebooks
+Intune Win32-App-Deployment via Microsoft Graph API für Geräteinitiative-Notebooks
 (Autopilot/Intune-managed, kein Domain-Join).
 
 > **Wichtig:** Vor dem erstmaligen **"App einrichten"** muss einmal die
-> **Admin-Anmeldung** (Radio-Button) durchgefuehrt werden. Dabei wird der
-> Admin Consent fuer "Microsoft Graph Command Line Tools" im Tenant erteilt.
+> **Admin-Anmeldung** (Radio-Button) durchgeführt werden. Dabei wird der
+> Admin Consent für "Microsoft Graph Command Line Tools" im Tenant erteilt.
 > Checkbox **"Consent on behalf of your organization"** aktivieren!
 > Danach kann auf App-Credentials (automatisch) umgeschaltet werden.
 
-- **Entra ID App Registration**: In-App Setup erstellt automatisch die benoetigte
+- **Entra ID App Registration**: In-App Setup erstellt automatisch die benötigte
   App Registration im Tenant (inkl. Permissions, Admin Consent, Client Secret)
 - **Auth**: Client Credentials Flow (unattended) + Auth Code Flow mit PKCE (interactive)
-- **Credential Store**: DPAPI-verschluesselte Secrets in `%APPDATA%\HU-NextExam\`
+- **Credential Store**: DPAPI-verschlüsselte Secrets in `%APPDATA%\HU-NextExam\`
 - **Packaging**: Automatischer Download von `IntuneWinAppUtil.exe`, MSI → `.intunewin`
-- **Upload**: Chunked Azure Blob Upload (6 MB Blocks) fuer grosse Pakete
-- **Win32 App CRUD**: Erstellen, Aktualisieren, Loeschen von Win32 LOB Apps via Graph beta
+- **Upload**: Chunked Azure Blob Upload (6 MB Blocks) für grosse Pakete
+- **Win32 App CRUD**: Erstellen, Aktualisieren, Löschen von Win32 LOB Apps via Graph beta
 - **Gruppen-Zuweisungen**: Required + Available for enrolled devices
 - **Dashboard-Widget**: Zeigt aktuelle GitHub-Release-Version vs. Intune-deployed Version
 - **Status-Vergleich**: Metadaten-Diff (Version, Description, Icon, Detection Rules)
@@ -131,31 +131,31 @@ Voraussetzung: Entra ID App Registration pro Tenant - siehe **[Docs/MDM-Setup.md
 oder den In-App-Setup-Button im MDM-Tab.
 
 ### GPO Setup
-Oben die Tasks-Liste mit Status fuer alle 4 GPOs pro Task
+Oben die Tasks-Liste mit Status für alle 4 GPOs pro Task
 (Install Student/Teacher + Firewall Student/Teacher).
-Unten Detail-Panel mit allen Pfaden, Filtern, Rechten fuer den markierten Task.
+Unten Detail-Panel mit allen Pfaden, Filtern, Rechten für den markierten Task.
 
 Buttons:
 - **Install-GPOs** → legt GPOs an mit Startup-Script (PowerShell, msiexec /quiet)
 - **FW-GPOs** → Firewall-Regeln (App-Rules + optional Ports)
-- **Mit OU verknuepfen** → GPO-Link zur OU aus dem Task
+- **Mit OU verknüpfen** → GPO-Link zur OU aus dem Task
 - **WMI-Filter cleanup** → entfernt alte WMI-Filter des Tasks (falls korrupt)
-- **GPOs entfernen** → Remove-GPO fuer alle 4 GPOs des Tasks
+- **GPOs entfernen** → Remove-GPO für alle 4 GPOs des Tasks
 
 ### Settings
-Multi-Task-Konfiguration (mehrere Deploy-Konfigurationen pro Server moeglich).
+Multi-Task-Konfiguration (mehrere Deploy-Konfigurationen pro Server möglich).
 Pro Task:
 - Domain, DC-Server
 - Student-/Teacher-Share (UNC-Pfad)
-- Status-Share (optional, fuer Client-Feedback)
+- Status-Share (optional, für Client-Feedback)
 - OU-Ziele (DistinguishedNames)
 - WMI-Filter (siehe unten)
-- GPO-Name-Praefix (Default: `HU-NEXT-EXAM-`)
+- GPO-Name-Präfix (Default: `HU-NEXT-EXAM-`)
 - Firewall-Einstellungen (Profile, EXE-Pfade, optional Ports)
 
 ### Log-Viewer
 Live-Ansicht von `%LOCALAPPDATA%\HU-NextExam-Manager\NextExam-Manager.log`.
-Filter nach Level (DEBUG/INFO/WARN/ERROR), Volltext-Suche, Log loeschen.
+Filter nach Level (DEBUG/INFO/WARN/ERROR), Volltext-Suche, Log löschen.
 
 ---
 
@@ -163,7 +163,7 @@ Filter nach Level (DEBUG/INFO/WARN/ERROR), Volltext-Suche, Log loeschen.
 
 1. Tool starten → **Settings**-Tab
 2. **"+ Neu"** → Task-Namen eingeben
-3. Felder fuellen:
+3. Felder füllen:
    - Domain FQDN z.B. `schule.local`
    - DC-Server (Hostname oder IP)
    - Student-Share UNC z.B. `\\FILESRV\install\NEXT-EXAM\Student`
@@ -171,23 +171,23 @@ Filter nach Level (DEBUG/INFO/WARN/ERROR), Volltext-Suche, Log loeschen.
    - OU-Ziel Student+Teacher als **DistinguishedName**
      `OU=Workstations,OU=EDV,DC=schule,DC=local`
    - WMI-Filter (siehe unten)
-   - GPO-Praefix bleibt bei `HU-NEXT-EXAM-`
+   - GPO-Präfix bleibt bei `HU-NEXT-EXAM-`
 4. **"Task speichern"**
 5. **MSI Pull**-Tab → "Release abfragen" → Task markieren → "Auswahl aktualisieren"
-6. **GPO Setup**-Tab → Task markieren → "Install-GPOs" → "FW-GPOs" → "Mit OU verknuepfen"
+6. **GPO Setup**-Tab → Task markieren → "Install-GPOs" → "FW-GPOs" → "Mit OU verknüpfen"
 7. Client neu starten (oder `gpupdate /force` + Reboot) → MSI wird installiert
 
 ---
 
 ## WMI-Filter konfigurieren (Beispiel)
 
-Wenn Student- und Teacher-PCs in **derselben OU** liegen, musst du ueber
+Wenn Student- und Teacher-PCs in **derselben OU** liegen, musst du über
 WMI-Filter trennen welcher PC welche GPO bekommt.
 
 ### Typisches Szenario
 
 Naming-Convention: Teacher-PC im Raum endet auf `-01` (z.B. `PC-EDV1-01`),
-Schueler-PCs haben jede andere Nummer (`PC-EDV1-02`, `PC-EDV1-03`, ...).
+Schüler-PCs haben jede andere Nummer (`PC-EDV1-02`, `PC-EDV1-03`, ...).
 
 ### Settings eintragen
 
@@ -196,26 +196,26 @@ Schueler-PCs haben jede andere Nummer (`PC-EDV1-02`, `PC-EDV1-03`, ...).
 | WMI-Filter **Student** | `Custom` | `SELECT * FROM Win32_ComputerSystem WHERE NOT Name LIKE '%-01'` |
 | WMI-Filter **Teacher** | `Custom` | `SELECT * FROM Win32_ComputerSystem WHERE Name LIKE '%-01'` |
 
-### Regeln fuer das Muster-Feld
+### Regeln für das Muster-Feld
 
-- **Einfache Anfuehrungszeichen** `'` (nicht doppelte `"`)
+- **Einfache Anführungszeichen** `'` (nicht doppelte `"`)
 - **Keine Klammern** um den LIKE-Ausdruck
 - **Typ `Custom`** wenn `NOT`, `AND`, `OR` vorkommt
-- **Typ `Pattern`** reicht fuer reine LIKE-Faelle (Muster z.B. `%-01`)
-- **Typ `Prefix`** fuer Hostname-Prefixe (Muster z.B. `PC-S` → `Name LIKE 'PC-S%'`)
-- **Typ `List`** fuer explizite Liste (Muster z.B. `PC1,PC2,PC3`)
+- **Typ `Pattern`** reicht für reine LIKE-Fälle (Muster z.B. `%-01`)
+- **Typ `Prefix`** für Hostname-Prefixe (Muster z.B. `PC-S` → `Name LIKE 'PC-S%'`)
+- **Typ `List`** für explizite Liste (Muster z.B. `PC1,PC2,PC3`)
 
 ### Was passiert dann
 
 Beim Klick auf **"Install-GPOs"** legt das Tool automatisch an:
 - `HU-NEXT-EXAM-WMI Student` in AD (unter CN=SOM,CN=WMIPolicy,CN=System,...)
 - `HU-NEXT-EXAM-WMI Teacher` in AD
-- Verknuepft beide mit den jeweiligen Install- und Firewall-GPOs
+- Verknüpft beide mit den jeweiligen Install- und Firewall-GPOs
 
-### Filter-Muster aendern
+### Filter-Muster ändern
 
-Das Tool ueberschreibt keine bestehenden Filter. Bei Pattern-Aenderung:
-1. **"WMI-Filter cleanup"** im GPO-Setup-Tab → loescht alte Filter des Tasks
+Das Tool überschreibt keine bestehenden Filter. Bei Pattern-Änderung:
+1. **"WMI-Filter cleanup"** im GPO-Setup-Tab → löscht alte Filter des Tasks
 2. **"Install-GPOs"** → legt frische Filter mit neuem Muster an
 
 ### Verifizieren in GPMC
@@ -227,10 +227,10 @@ Das Tool ueberschreibt keine bestehenden Filter. Bei Pattern-Aenderung:
 
 ## Auto-Pull automatisieren
 
-**MSI Pull**-Tab → Checkbox **"Auto-Pull taeglich um HH:mm"**:
+**MSI Pull**-Tab → Checkbox **"Auto-Pull täglich um HH:mm"**:
 - Default `03:00` (anpassbar)
-- **SYSTEM-Mode** empfohlen fuer produktiven Dauerbetrieb (braucht Share-ACL
-  fuer Machine-Account `DOMAIN\<COMPUTERNAME>$`)
+- **SYSTEM-Mode** empfohlen für produktiven Dauerbetrieb (braucht Share-ACL
+  für Machine-Account `DOMAIN\<COMPUTERNAME>$`)
 - **User-Mode** wenn Admin-Rechte nicht zentral konfigurierbar
 
 Scheduled Task liegt unter `\HU-NextExam-Manager\AutoPull` (SYSTEM) oder
@@ -242,7 +242,7 @@ headless auf - skipped Tasks die bereits die aktuelle Version haben.
 ## Client-Status
 
 Wenn pro Task ein **Status-Share** konfiguriert ist, schreibt das Client-
-Startup-Script nach jedem Install-Check eine JSON-Datei zurueck:
+Startup-Script nach jedem Install-Check eine JSON-Datei zurück:
 
 ```json
 {
@@ -261,7 +261,7 @@ Im **Dashboard** siehst du alle Clients eines Tasks mit Status.
 1. Settings → Task → **Status-Share-Pfad** eintragen (Default-Vorschlag wird
    aus dem Student-Share abgeleitet: `<Parent>\_status`)
 2. Button **"Anlegen + ACL"** → legt Ordner an, setzt NTFS-ACL:
-   - Domain-Computers: Write + Read (Clients koennen schreiben)
+   - Domain-Computers: Write + Read (Clients können schreiben)
    - Domain-Admins: FullControl
    - Vererbung deaktiviert (nur dieser Ordner)
 3. Install-GPOs neu erstellen → Startup-Script bekommt den Status-Pfad
@@ -310,17 +310,17 @@ HU-NextExam-Manager/
 
 ### 1. GPO "Nicht angewendet (Leer)" nach Install-GPOs erstellen
 
-**Problem:** Nach dem Erstellen der Install-GPOs ueber das Tool zeigt `gpresult`
+**Problem:** Nach dem Erstellen der Install-GPOs über das Tool zeigt `gpresult`
 die GPOs als "Nicht angewendet (Leer)" an. Die Scripts-CSE erkennt die
-programmatisch geschriebenen `scripts.ini` / `psscripts.ini` nicht als gueltig.
+programmatisch geschriebenen `scripts.ini` / `psscripts.ini` nicht als gültig.
 
 **Workaround (manuell, pro Install-GPO):**
-1. GPMC oeffnen (`gpmc.msc`)
+1. GPMC öffnen (`gpmc.msc`)
 2. Die betroffene GPO finden (z.B. `HU-NEXT-EXAM-Student-Install`)
 3. Rechtsklick → **Bearbeiten**
 4. Computerkonfiguration → Windows-Einstellungen → **Skripts (Starten/Herunterfahren)**
 5. **Starten** doppelklicken
 6. Das CMD-Script (`Startup-NextExam.cmd`) sollte bereits gelistet sein
-7. Einfach **OK** klicken (nichts aendern, nur bestaetigen)
+7. Einfach **OK** klicken (nichts ändern, nur bestätigen)
 8. Editor schliessen
-9. Fuer **beide** Install-GPOs wiederholen (Student + Teacher)
+9. Für **beide** Install-GPOs wiederholen (Student + Teacher)
