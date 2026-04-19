@@ -1,12 +1,12 @@
 # HU-NextExam-Manager
 
 WPF-Tool (PowerShell 5.1) fuer die automatische Verwaltung von Next-Exam Versionen
-in Active-Directory-Umgebungen.
+in Active-Directory-Umgebungen und via Intune/MDM (Microsoft Graph API).
 
 **Inoffizielles Drittanbieter-Tool**. Siehe `Docs/NOTICE.md` fuer Trademark-
 und Nutzungsrechte-Hinweise.
 
-## Funktion
+## Funktionen
 
 - **MSI-Deploy:** Download offizieller Next-Exam-Releases (Student + Teacher)
   direkt von GitHub, Ablage auf konfigurierten UNC-Shares, Rolling Archive
@@ -14,6 +14,10 @@ und Nutzungsrechte-Hinweise.
   - Install-GPOs mit PowerShell-Startup-Script (Version-Check + `msiexec /quiet`)
   - Firewall-GPOs (App-Regeln + optionale TCP/UDP-Ports)
   - WMI-Filter (Prefix/Pattern/List/Custom) automatisch erstellt + zugewiesen
+- **MDM-Deployment:** Intune Win32-App-Upload via Microsoft Graph API
+  - Entra ID App Registration per In-App Setup-Wizard
+  - Client Credentials Flow + Auth Code Flow mit PKCE
+  - Chunked Azure Blob Upload, Win32 App CRUD, Gruppen-Zuweisungen
 - **Auto-Pull:** Scheduled Task fuer taegliche MSI-Updates (SYSTEM oder User)
 - **Self-Update:** Tool aktualisiert sich via Pull.ps1 aus dem Repo
 - **Dashboard + Log-Viewer** fuer Einsatzbereit-Ampel und Troubleshooting
@@ -27,13 +31,7 @@ und Nutzungsrechte-Hinweise.
 
 ## Installation
 
-Siehe `Docs/INSTALL.md`.
-
-## MDM-Integration (v1.1)
-
-Intune-Integration fuer Win32-App-Upload ueber Microsoft Graph API ist
-geplant. Vorbereitung (Azure-App-Registration pro Tenant) bereits jetzt
-moeglich - siehe `Docs/MDM-Setup.md`.
+Siehe `Docs/INSTALL.md` oder die Hauptdokumentation in `README.md`.
 
 ## Lizenz
 
