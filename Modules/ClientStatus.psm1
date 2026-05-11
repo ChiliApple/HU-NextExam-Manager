@@ -3,9 +3,10 @@
 .SYNOPSIS
     Client-Status via Share-Pattern. Clients schreiben JSON nach Install.
 .NOTES
-    v2.1 - Fix: BOM/Encoding-robustes JSON-Parsing
-         - Fix: Initialize-StatusShare setzt auch SMB-Share-Permissions
-         - Fix: Atomic-Write Empfehlung fuer Startup-Script
+    v2.1.1 - Fix: Multi-JSON-Objekte in einer Datei (nur erstes Objekt verwenden)
+    v2.1   - Fix: BOM/Encoding-robustes JSON-Parsing
+           - Fix: Initialize-StatusShare setzt auch SMB-Share-Permissions
+           - Fix: Atomic-Write Empfehlung fuer Startup-Script
 #>
 
 function Initialize-StatusShare {
@@ -175,39 +176,30 @@ function Read-ClientStatus {
                 }
             }
 
+            # v2.1.1 Fix: Falls mehrere JSON-Objekte konkateniert (z.B. durch alten Schreibvorgang)
+            # nur das erste Top-Level-Objekt extrahieren
+            $trimmed = $raw.TrimStart()
+            if ($trimmed.Length -gt 1 -and $trimmed[0] -eq '{') {
+                $depth = 0; $endIdx = -1
+                for ($ci = 0; $ci -lt $trimmed.Length; $ci++) {
+                    switch ($trimmed[$ci]) {
+                        '{' { $depth++ }
+                        '}' { $depth--; if ($depth -eq 0) { $endIdx = $ci; break } }
+                    }
+                    if ($endIdx -ge 0) { break }
+                }
+                if ($endIdx -ge 0 -and $endIdx -lt ($trimmed.Length - 1)) {
+                    # Es gibt Content NACH dem ersten Objekt -> abschneiden
+                    $remainder = $trimmed.Substring($endIdx + 1).Trim()
+                    if ($remainder.Length -gt 0) {
+                        $raw = $trimmed.Substring(0, $endIdx + 1)
+                        Write-Warning "Multi-JSON in $($f.Name) - nur erstes Objekt verwendet"
+                    }
+                }
+            }
+
             $obj = $raw | ConvertFrom-Json -ErrorAction Stop
 
             [PSCustomObject]@{
                 ComputerName = [string]$obj.ComputerName
-                Role         = [string]$obj.Role
-                Installed    = [string]$obj.Installed
-                Target       = [string]$obj.Target
-                LastCheck    = [string]$obj.LastCheck
-                LastAction   = [string]$obj.LastAction
-                FileModified = $f.LastWriteTime
-                File         = $f.FullName
-            }
-        } catch {
-            # Kurzfassung der Fehlermeldung (kein JSON-Dump in die UI)
-            $errMsg = $_.Exception.Message
-            # Fehlermeldung auf max 120 Zeichen kuerzen (verhindert JSON-Dump in DataGrid)
-            if ($errMsg.Length -gt 120) { $errMsg = $errMsg.Substring(0, 120) + '...' }
-
-            [PSCustomObject]@{
-                ComputerName = $f.BaseName
-                Role         = '-'
-                Installed    = '-'
-                Target       = '-'
-                LastCheck    = '-'
-                LastAction   = "Parse-Fehler: $errMsg"
-                FileModified = $f.LastWriteTime
-                File         = $f.FullName
-            }
-        }
-    }
-    return @($result | Sort-Object ComputerName, Role)
-}
-
-if ($ExecutionContext.SessionState.Module) {
-    Export-ModuleMember -Function Initialize-StatusShare, Read-ClientStatus
-}
+                Role         = [string]$obj.
