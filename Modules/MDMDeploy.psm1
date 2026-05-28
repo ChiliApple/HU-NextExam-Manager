@@ -937,7 +937,10 @@ function Compare-NextExamAppMetadata {
     foreach ($field in @('description','publisher','developer','informationUrl')) {
         $expected = $defaults[$field]
         $actual   = $IntuneApp.$field
-        $match    = ($actual -eq $expected)
+        # Normalize Unicode dashes/quotes before comparison (prevents false positives)
+        $normExpected = if ($expected) { $expected -replace '[\u2013\u2014]', '-' -replace '[\u2018\u2019]', "'" -replace '[\u201C\u201D]', '"' } else { $expected }
+        $normActual   = if ($actual)   { $actual   -replace '[\u2013\u2014]', '-' -replace '[\u2018\u2019]', "'" -replace '[\u201C\u201D]', '"' } else { $actual }
+        $match    = ($normActual -eq $normExpected)
         $diffs += [PSCustomObject]@{
             Property = $field
             Expected = $expected
