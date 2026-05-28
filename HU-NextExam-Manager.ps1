@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '2.0.1'
+$script:ToolVersion = '2.0.2'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -2126,11 +2126,18 @@ function Initialize-MDMTenantComboBox {
 }
 
 function Build-AppMetadata {
-    param([Parameter(Mandatory)][ValidateSet('Student','Teacher')][string]$Role)
+    param(
+        [Parameter(Mandatory)][ValidateSet('Student','Teacher')][string]$Role,
+        [string]$MSIFileName
+    )
     $displayName = "Next-Exam-$Role"
-    $msiName = "NextExam$Role.msi"
+    # Use actual MSI filename from GitHub Release if provided, otherwise fallback
+    $msiName = if ($MSIFileName) { $MSIFileName } else { "NextExam$Role.msi" }
     $desc = if ($script:txtMDMDescription.Text) { $script:txtMDMDescription.Text } else { $displayName }
     $iconFile = Join-Path $script:RootPath 'Assets\icon.png'
+    # Install-Command: replace any .msi reference with actual filename
+    $installCmd = $script:txtMDMInstallCmd.Text -replace '[^\s"]+\.msi', $msiName
+    $uninstallCmd = $script:txtMDMUninstallCmd.Text
     return @{
         _role              = $Role
         displayName        = $displayName
@@ -2138,8 +2145,8 @@ function Build-AppMetadata {
         publisher          = $script:txtMDMPublisher.Text
         developer          = $script:txtMDMDeveloper.Text
         informationUrl     = $script:txtMDMInfoUrl.Text
-        installCommandLine = ($script:txtMDMInstallCmd.Text -replace 'NextExamStudent\.msi', $msiName)
-        uninstallCommandLine = ($script:txtMDMUninstallCmd.Text -replace 'NextExamStudent\.msi', $msiName)
+        installCommandLine = $installCmd
+        uninstallCommandLine = $uninstallCmd
         installExperience  = ($script:cmbMDMInstallContext.SelectedItem.Content)
         setupFilePath      = $msiName
         iconPath           = $(if (Test-Path $iconFile) { $iconFile } else { $null })
@@ -2671,6 +2678,13 @@ function Invoke-MDMDeploy {
                 $msiInfo = $msiPaths[$role]
                 $metadata = $metadataMap[$role]
                 $metadata['displayVersion'] = $msiInfo.Version
+                # Fix setupFilePath + installCommandLine to match actual MSI filename (prevents 0x80070653)
+                $actualMsiName = $msiInfo.FileName
+                if ($actualMsiName -and $metadata['setupFilePath'] -ne $actualMsiName) {
+                    Write-Log "setupFilePath Korrektur: '$($metadata['setupFilePath'])' -> '$actualMsiName'" -Level INFO -Source 'MDM'
+                    $metadata['setupFilePath'] = $actualMsiName
+                    $metadata['installCommandLine'] = $metadata['installCommandLine'] -replace '[^\s"]+\.msi', $actualMsiName
+                }
 
                 try {
                     $publishParams = @{

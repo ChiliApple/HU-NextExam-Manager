@@ -1285,6 +1285,14 @@ function Publish-NextExamToIntune {
     $steps = 6
     $report = @{ Success = $false; Action = ''; AppId = ''; Message = '' }
 
+    # --- Safety: setupFilePath muss mit tatsaechlichem MSI-Dateinamen uebereinstimmen ---
+    $actualMsiName = [System.IO.Path]::GetFileName($MSIPath)
+    if ($AppMetadata['setupFilePath'] -and $AppMetadata['setupFilePath'] -ne $actualMsiName) {
+        Write-Log "setupFilePath Korrektur: '$($AppMetadata['setupFilePath'])' -> '$actualMsiName' (verhindert 0x80070653)" -Level WARN -Source 'MDM'
+        $AppMetadata['setupFilePath'] = $actualMsiName
+        $AppMetadata['installCommandLine'] = $AppMetadata['installCommandLine'] -replace '[^\s"]+\.msi', $actualMsiName
+    }
+
     # Helper: Progress melden
     $progress = {
         param($step, $msg)
