@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '2.0.2'
+$script:ToolVersion = '2.0.3'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -659,15 +659,19 @@ $script:txtAutoPullTime   = Get-UI 'txtAutoPullTime'
 $script:lblAutoPullStatus = Get-UI 'lblAutoPullStatus'
 $script:rbAutoPullSystem  = Get-UI 'rbAutoPullSystem'
 $script:rbAutoPullUser    = Get-UI 'rbAutoPullUser'
+$script:chkIncludePrerelease = Get-UI 'chkIncludePrerelease'
 
 $script:CurrentRelease = $null  # Cache
 
 function Update-ReleaseDisplay {
     try {
         Set-Status "Frage GitHub nach Next-Exam Release..."
-        $rel = Get-NextExamLatestRelease
+        $incPre = $false
+        try { $incPre = [bool]$script:Config.ToolSettings.IncludePrerelease } catch {}
+        $rel = Get-NextExamLatestRelease -IncludePrerelease:$incPre
         $script:CurrentRelease = $rel
-        $script:lblReleaseVersion.Text = "Tag:       $($rel.TagName) - $($rel.Name)"
+        $preTag = if ($rel.Prerelease) { '   [PRE-RELEASE]' } else { '' }
+        $script:lblReleaseVersion.Text = "Tag:       $($rel.TagName) - $($rel.Name)$preTag"
         $script:lblReleaseDate.Text    = "Stand:     $($rel.PublishedAt)"
         if ($rel.Student) { $script:lblReleaseStudent.Text = "Student:   $($rel.Student.FileName) ($([math]::Round($rel.Student.Size/1MB,1)) MB)" }
         if ($rel.Teacher) { $script:lblReleaseTeacher.Text = "Teacher:   $($rel.Teacher.FileName) ($([math]::Round($rel.Teacher.Size/1MB,1)) MB)" }
@@ -942,6 +946,25 @@ function Cleanup-DeployState {
 
 $script:btnReleaseRefresh.Add_Click({ Update-ReleaseDisplay; Refresh-MSITaskStatus })
 $script:btnReleaseChangelog.Add_Click({ Show-ReleaseChangelog })
+
+# Pre-Release-Checkbox: Init aus Config + Persistenz + sofortige Neu-Abfrage
+if ($script:chkIncludePrerelease) {
+    try { $script:chkIncludePrerelease.IsChecked = [bool]$script:Config.ToolSettings.IncludePrerelease } catch {}
+    $script:chkIncludePrerelease.Add_Click({
+        try {
+            if (-not ($script:Config.ToolSettings.PSObject.Properties.Name -contains 'IncludePrerelease')) {
+                $script:Config.ToolSettings | Add-Member -NotePropertyName 'IncludePrerelease' -NotePropertyValue $false -Force
+            }
+            $script:Config.ToolSettings.IncludePrerelease = [bool]$script:chkIncludePrerelease.IsChecked
+            Save-Config -Config $script:Config
+            if ($script:chkIncludePrerelease.IsChecked) { Set-Status 'Pre-Releases werden beruecksichtigt' }
+            else { Set-Status 'Nur stabile Releases' }
+            Update-ReleaseDisplay; Refresh-MSITaskStatus
+        } catch {
+            [System.Windows.MessageBox]::Show("Fehler beim Speichern der Pre-Release-Einstellung:`n`n$_", 'Fehler', 'OK', 'Error') | Out-Null
+        }
+    })
+}
 $script:btnRefreshStatus.Add_Click({
     Show-LoadingOverlay
     Set-Status "Lade MSI-Status..."

@@ -4,7 +4,7 @@
     MSI-Pull-Modul: Next-Exam Release abfragen, MSI downloaden, auf Shares deployen.
 #>
 
-$script:NextExamApiUrl = 'https://api.github.com/repos/Bildungsportal/next-exam/releases/latest'
+$script:NextExamApiBase = 'https://api.github.com/repos/Bildungsportal/next-exam/releases'
 $script:AssetRegex     = '^Next-Exam-(?<Role>Student|Teacher)_(?<Version>\d+\.\d+\.\d+\.\d+)_(?<Date>\d{8})_x64\.msi$'
 # $script:VersionFileName obsolet - jetzt pro Rolle via Get-VersionFileName
 $script:ArchiveFolder   = '_archive'
@@ -16,7 +16,20 @@ function Get-VersionFileName {
 
 function Get-NextExamLatestRelease {
     [CmdletBinding()]
-    param()
+    param(
+        # Wenn gesetzt, werden auch als Pre-Release markierte Versionen beruecksichtigt.
+        # Ohne expliziten Wert wird der Default aus der Config gelesen (ToolSettings.IncludePrerelease),
+        # damit auch der headless Auto-Pull die Einstellung respektiert.
+        [switch]$IncludePrerelease
+    )
+
+    if (-not $PSBoundParameters.ContainsKey('IncludePrerelease')) {
+        try { if ([bool]$script:Config.ToolSettings.IncludePrerelease) { $IncludePrerelease = $true } } catch {}
+        if (-not $IncludePrerelease) {
+            try { if ([bool](Load-Config).ToolSettings.IncludePrerelease) { $IncludePrerelease = $true } } catch {}
+        }
+    }
+
     try {
         $h = @{
             Accept       = 'application/vnd.github.v3+json'
@@ -27,10 +40,25 @@ function Get-NextExamLatestRelease {
         try { $tok = $script:Config.ToolSettings.GitHubToken } catch {}
         if (-not $tok) { try { $tok = (Load-Config).ToolSettings.GitHubToken } catch {} }
         if ($tok) { $h['Authorization'] = "token $tok" }
-        $r = Invoke-RestMethod -Uri $script:NextExamApiUrl -UseBasicParsing -Headers $h -ErrorAction Stop
+
+        if ($IncludePrerelease) {
+            # GitHub /releases/latest ueberspringt Pre-Releases per Definition.
+            # Daher /releases (neueste zuerst) abfragen und das neueste nicht-Draft-Release
+            # nehmen - bevorzugt eines, das eine passende Student/Teacher-MSI enthaelt.
+            $all = Invoke-RestMethod -Uri ($script:NextExamApiBase + '?per_page=30') -UseBasicParsing -Headers $h -ErrorAction Stop
+            $nonDraft = @($all | Where-Object { -not $_.draft })
+            $r = $nonDraft | Where-Object {
+                    @($_.assets | Where-Object { $_.name -match $script:AssetRegex }).Count -gt 0
+                 } | Select-Object -First 1
+            if (-not $r) { $r = $nonDraft | Select-Object -First 1 }
+        } else {
+            # Nur stabiles Release (Verhalten wie bisher)
+            $r = Invoke-RestMethod -Uri ($script:NextExamApiBase + '/latest') -UseBasicParsing -Headers $h -ErrorAction Stop
+        }
     } catch {
         throw "GitHub-API-Fehler (Next-Exam Release): $_"
     }
+    if (-not $r) { throw "Kein passendes Next-Exam Release gefunden (IncludePrerelease=$IncludePrerelease)." }
 
     $assets = @()
     foreach ($a in $r.assets) {
@@ -52,6 +80,7 @@ function Get-NextExamLatestRelease {
         PublishedAt = $r.published_at
         HtmlUrl     = $r.html_url
         Body        = $r.body
+        Prerelease  = [bool]$r.prerelease
         Student     = ($assets | Where-Object { $_.Role -eq 'Student' } | Select-Object -First 1)
         Teacher     = ($assets | Where-Object { $_.Role -eq 'Teacher' } | Select-Object -First 1)
     }

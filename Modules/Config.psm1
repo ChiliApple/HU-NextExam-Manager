@@ -30,6 +30,7 @@ function Get-DefaultConfig {
             UpdateCheckOnStart   = $true
             AutoPullEnabled      = $false
             AutoPullScheduleTime = '03:00'
+            IncludePrerelease    = $false  # Wenn $true: auch Next-Exam Pre-Releases beruecksichtigen
             GitHubToken          = ''  # Optional: GitHub PAT fuer 5000 API-Calls/h statt 60
             Window               = [PSCustomObject]@{
                 Left   = $null

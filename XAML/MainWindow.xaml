@@ -452,6 +452,9 @@
                             <StackPanel Grid.Column="1" VerticalAlignment="Top">
                                 <Button x:Name="btnReleaseRefresh"  Content="Release abfragen" Width="150"/>
                                 <Button x:Name="btnReleaseChangelog" Content="Changelog..."    Width="150" Margin="0,4,0,0"/>
+                                <CheckBox x:Name="chkIncludePrerelease" Content="Pre-Releases einbeziehen" Width="150" Margin="0,8,0,0"
+                                          Foreground="#E0E0E0" VerticalAlignment="Center"
+                                          ToolTip="Wenn aktiv, werden auch als Pre-Release markierte Next-Exam-Versionen beruecksichtigt (z.B. 2.0.0 Pre-Release). Standard: nur stabile Releases. Gilt auch fuer den taeglichen Auto-Pull."/>
                             </StackPanel>
                         </Grid>
                     </GroupBox>

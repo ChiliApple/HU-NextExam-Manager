@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.3 (2026-08-05)
+
+### Feature
+- **Pre-Release-Unterstuetzung** — Neue Checkbox „Pre-Releases einbeziehen" im MSI-Pull-Tab. Bisher fragte das Tool ausschliesslich `/releases/latest` ab, wodurch als Pre-Release markierte Next-Exam-Versionen (z.B. 2.0.0 Pre-Release) nie gefunden wurden. Bei aktivierter Checkbox wird nun `/releases` abgefragt und das neueste nicht-Draft-Release mit passender Student/Teacher-MSI verwendet.
+- Einstellung wird in der Config persistiert (`ToolSettings.IncludePrerelease`, Default `$false`) und gilt auch fuer den taeglichen headless Auto-Pull.
+- Release-Anzeige markiert Pre-Releases zusaetzlich mit `[PRE-RELEASE]`.
+- Standardverhalten unveraendert: ohne Haken werden weiterhin nur stabile Releases gezogen.
+
 ## v2.0.2 (2026-05-28)
 
 ### Bugfix
