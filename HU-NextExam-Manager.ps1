@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '2.0.3'
+$script:ToolVersion = '2.0.4'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -162,6 +162,8 @@ try {
     Write-Log -Message "XAML-Load-Fehler: $_" -Level ERROR -Source 'XAML'
     throw
 }
+# Fenstertitel dynamisch aus der Tool-Version setzen (nie hardcodiert hinterherhinken)
+try { $script:Window.Title = "HU-NextExam-Manager v$($script:ToolVersion)" } catch {}
 # --- Splash Screen ---
 try {
     $splashXaml = @"

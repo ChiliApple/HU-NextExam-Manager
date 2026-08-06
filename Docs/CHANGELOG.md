@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.4 (2026-08-05)
+
+### Fix
+- **Fenstertitel zeigte alte Version** — Die WPF-Titelleiste war fest auf `v2.0.2` verdrahtet und hinkte der tatsaechlichen Tool-Version hinterher. Titel wird jetzt zur Laufzeit aus `$script:ToolVersion` gesetzt und bleibt dadurch immer korrekt.
+
 ## v2.0.3 (2026-08-05)
 
 ### Feature
