@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.0 (2026-08-06)
+
+### Geaendert
+- GPP Scheduled Task bekommt einen RegistrationTrigger: der Task laeuft jetzt SOFORT, sobald
+  Group Policy ihn anlegt/aktualisiert (naechster GP-Refresh) - ohne Reboot und ohne auf den
+  taeglichen 07:30-Trigger zu warten. Behebt, dass beim ersten Rollout/Update bisher ein Boot
+  bzw. der Tages-Trigger abgewartet werden musste. Boot- + Daily-Trigger bleiben als Absicherung.
+  (Das Startup-ps1 ist idempotent: installiert nur bei Versionsdifferenz, sonst ~1s No-op.)
 ## v3.0.0 (2026-08-06)
 
 ### Geaendert

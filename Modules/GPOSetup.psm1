@@ -23,6 +23,10 @@
     WICHTIG: Startup-NextExam.ps1 wird als reines ASCII mit CRLF geschrieben,
              da PowerShell 5.1 BOM-lose Dateien als ANSI interpretiert.
 .NOTES
+    v3.1 - Task: RegistrationTrigger ergaenzt -> Task laeuft SOFORT, sobald GP ihn
+           anlegt/aktualisiert (naechster GP-Refresh, ohne Boot/ohne 07:30-Warten).
+           Behebt: beim ersten Rollout/Update musste bisher ein Boot/Tages-Trigger
+           abgewartet werden. Boot+Daily bleiben als Absicherung.
     v3.0 - Umstellung Startup-Script -> GPP Scheduled Task (SYSTEM, Boot+Daily)
          - Migration: retire startup-script (leere scripts.ini/psscripts.ini)
          - gPCMachineExtensionNames: Scripts-CSE + Preferences-Scheduled-Tasks-CSE
@@ -275,9 +279,11 @@ function New-NextExamTaskXml {
     .SYNOPSIS
         Baut den ScheduledTasks.xml-Inhalt fuer einen SYSTEM-Task (TaskV2, action=R).
     .DESCRIPTION
-        Trigger: BootTrigger (+BootDelay, StartWhenAvailable) + taeglicher CalendarTrigger.
+        Trigger: RegistrationTrigger (feuert sofort bei GP-Anlage/-Update) + BootTrigger
+                 (+BootDelay) + taeglicher CalendarTrigger. StartWhenAvailable.
         Action:  powershell.exe -File <Ps1UncPath> -SharePath .. -Role .. -StatusPath ..
-        action="R" (Replace) = idempotent, self-healing bei jedem GP-Refresh.
+        action="R" (Replace) = idempotent, self-healing bei jedem GP-Refresh; das ps1
+        ist idempotent (installiert nur bei Versionsdifferenz, sonst ~1s No-op).
     #>
     [CmdletBinding()]
     param(
@@ -342,6 +348,9 @@ function New-NextExamTaskXml {
 					</RestartOnFailure>
 				</Settings>
 				<Triggers>
+					<RegistrationTrigger>
+						<Enabled>true</Enabled>
+					</RegistrationTrigger>
 					<BootTrigger>
 						<Enabled>true</Enabled>
 						<Delay>$BootDelay</Delay>
