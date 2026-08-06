@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     HU-NextExam-Manager - WPF-Tool fuer Next-Exam Versionsverwaltung.
@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '2.0.4'
+$script:ToolVersion = '3.0.0'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot

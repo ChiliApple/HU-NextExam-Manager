@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.0.0 (2026-08-06)
+
+### Geaendert
+- Client-Deployment von GPO-Startup-Script auf GPO-Preferences GEPLANTER TASK (SYSTEM) umgestellt.
+  Startup-Scripts feuerten auf manchen Clients beim Boot unzuverlaessig (gpscript, "0 Sekunden"-Boots)
+  -> Updates blieben aus. Der Task (Trigger: Systemstart +Delay + taeglich, StartWhenAvailable) ist
+  immun gegen das Boot-Timing und self-healing (GPP-CSE reapplied bei jedem Refresh).
+- Bestehende Rollouts migrieren automatisch beim Re-Deploy: New-NextExamInstallGPO baut die GPO in place
+  um (Task rein, scripts.ini/psscripts.ini geleert, CMD-Wrapper entfernt). GUI/Status rueckwaertskompatibel.
+
+### Neu
+- Invoke-NextExamGpoMigration: findet alle Install-GPOs einer Domaene und migriert sie auf Task-Modus
+  (liest Parameter aus der vorhandenen Registrierung; Firewall-GPOs werden uebersprungen). -WhatIf fuer Dry-Run.
 ## v2.0.4 (2026-08-05)
 
 ### Fix
