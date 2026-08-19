@@ -1,5 +1,20 @@
 # Changelog
 
+## v3.1.1 (2026-08-19)
+
+### Fix
+- **Pull.ps1 war fest auf den Desktop verdrahtet** — `$Target` zeigte immer auf
+  `%USERPROFILE%\Desktop\HU-NextExam-Manager`. Lag das Tool woanders (z.B. `C:\Tools`
+  fuer mehrere Admins), zog ein Update die Dateien auf den Desktop des ausfuehrenden
+  Users, waehrend der laufende Ordner alt blieb. Neu: liegt Pull.ps1 in einer
+  Installation (`Modules\` bzw. Hauptscript daneben), wird genau dieser Ordner
+  aktualisiert; liegt sie allein irgendwo, bleibt es beim Desktop-Bootstrap wie
+  bisher. Optional `-Target <Pfad>`. Zusaetzlich Schreibrechte-Vorabpruefung.
+- **Start.vbs startete unnoetig elevated** (`runas`). Elevation bringt fuer
+  GPMC/GPO-Operationen nichts — die Rechte kommen aus AD (Domaenen-Admins /
+  Richtlinien-Ersteller-Besitzer). Jetzt `open`, dazu Existenzpruefung des
+  Hauptscripts und gesetztes WorkingDirectory (noetig fuer Verknuepfungen).
+
 ## v3.1.0 (2026-08-06)
 
 ### Geaendert
