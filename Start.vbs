@@ -1,7 +1,7 @@
-' HU-NextExam-Manager Launcher - fensterlos, OHNE Elevation.
-' WICHTIG: NICHT elevated starten. GPMC-COM (Get-GPO) laeuft im gefilterten
-' Token zuverlaessiger; GPO-Rechte kommen aus AD (Domaenen-Admins /
-' Richtlinien-Ersteller-Besitzer), nicht aus lokaler Elevation.
+' HU-NextExam-Manager Launcher - fensterlos + elevated (UAC-Prompt)
+' Elevation: fuer die Registrierung des AutoPull-Tasks als SYSTEM und fuer
+' Schreibzugriff auf Tool-Ordner ausserhalb des Userprofils.
+' GPO-Rechte kommen dagegen aus AD (Domaenen-Admins / Richtlinien-Ersteller-Besitzer).
 ' Ortsunabhaengig: Ordner darf auf dem Desktop, unter C:\Tools o.ae. liegen.
 Set oFSO = CreateObject("Scripting.FileSystemObject")
 sRoot = oFSO.GetParentFolderName(WScript.ScriptFullName)
@@ -13,7 +13,7 @@ If Not oFSO.FileExists(sScript) Then
 End If
 
 Set oShell = CreateObject("Shell.Application")
-' verb "open" = normaler Start ohne UAC-Prompt, WindowStyle 0 = versteckt
+' verb "runas" triggert UAC-Prompt, WindowStyle 0 = versteckt (kein Konsolenfenster)
 oShell.ShellExecute "powershell.exe", _
     "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & sScript & """", _
-    sRoot, "open", 0
+    sRoot, "runas", 0

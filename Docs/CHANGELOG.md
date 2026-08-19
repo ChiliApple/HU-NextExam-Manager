@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.1.2 (2026-08-19)
+
+### Fix
+- **Start.vbs wieder mit Elevation** — in v3.1.1 war `runas` durch `open` ersetzt
+  worden. Das war falsch: Elevation wird fuer die Registrierung des AutoPull-Tasks
+  als SYSTEM gebraucht, und `ShellExecute` blendet das Konsolenfenster nur mit
+  `runas` zuverlaessig aus (mit `open` blieb ein Fenster hinter dem Splash stehen).
+  Existenzpruefung des Hauptscripts und WorkingDirectory aus v3.1.1 bleiben.
+
 ## v3.1.1 (2026-08-19)
 
 ### Fix
