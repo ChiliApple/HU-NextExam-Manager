@@ -17,3 +17,7 @@ desktop.ini
 
 # Screenshots - nur maskierte Versionen im Repo
 # Docs/screenshots/
+
+# Lokale Claude-Code-Notizen: nie im Repo
+CLAUDE.local.md
+.claude/settings.local.json
