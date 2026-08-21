@@ -2990,7 +2990,6 @@ $script:btnClientRefresh.Add_Click({
 })
 
 # ========== Tool-Self-Update (Check gegen GitHub-Repo) ==========
-$script:UpdatePullToken  = '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'
 $script:UpdateRepoOwner  = 'ChiliApple'
 $script:UpdateRepoName   = 'HU-NextExam-Manager'
 $script:UpdateApiUrl     = "https://raw.githubusercontent.com/$($script:UpdateRepoOwner)/$($script:UpdateRepoName)/main/HU-NextExam-Manager.ps1"
