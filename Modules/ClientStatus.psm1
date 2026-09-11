@@ -231,6 +231,35 @@ function Read-ClientStatus {
     return @($result | Sort-Object ComputerName, Role)
 }
 
+function Clear-ClientStatus {
+    <#
+    .SYNOPSIS
+        Loescht alle *.json Statusdateien im Status-Share.
+    .DESCRIPTION
+        Zum Aufraeumen veralteter Eintraege (z.B. nach Geraete-Umbenennung, wenn
+        alte/falsche Rechnernamen im Status haengenbleiben). Die Clients legen ihre
+        Statusdatei beim naechsten Start automatisch neu an.
+        Gibt Anzahl geloeschter/fehlgeschlagener Dateien + Fehlermeldungen zurueck.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $result = [PSCustomObject]@{ Deleted = 0; Failed = 0; Errors = @() }
+    if (-not (Test-Path $Path)) { return $result }
+
+    $files = Get-ChildItem -Path $Path -Filter '*.json' -File -ErrorAction SilentlyContinue
+    foreach ($f in $files) {
+        try {
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
+            $result.Deleted++
+        } catch {
+            $result.Failed++
+            $result.Errors += "$($f.Name): $($_.Exception.Message)"
+        }
+    }
+    return $result
+}
+
 if ($ExecutionContext.SessionState.Module) {
-    Export-ModuleMember -Function Initialize-StatusShare, Read-ClientStatus
+    Export-ModuleMember -Function Initialize-StatusShare, Read-ClientStatus, Clear-ClientStatus
 }

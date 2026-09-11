@@ -384,11 +384,13 @@
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <Label Content="Task:" Grid.Column="0" VerticalAlignment="Center"/>
                                 <ComboBox x:Name="cmbClientTask" Grid.Column="1" Width="220" VerticalAlignment="Center" />
                                 <TextBlock x:Name="lblClientShare" Grid.Column="2" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#9A9A9A" TextTrimming="CharacterEllipsis"/>
                                 <Button x:Name="btnClientRefresh" Grid.Column="3" Content="Aktualisieren" Width="130"/>
+                                <Button x:Name="btnClientClear" Grid.Column="4" Content="Aufr&#228;umen" Width="130" Margin="8,0,0,0" Background="#B33A3A" Foreground="White" ToolTip="L&#246;scht alle Status-Eintr&#228;ge dieses Shares. Clients legen sie beim n&#228;chsten Start neu an."/>
                             </Grid>
                             <ListView x:Name="lstClients" Grid.Row="1" Background="#2D2D30" Foreground="#E0E0E0" BorderBrush="#3F3F46">
                                 <ListView.View>

@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.1.3 (2026-09-11)
+
+### Feature
+- **Aufraeum-Button im Clients-Status** — im Dashboard-Reiter "Clients" gibt es
+  neben "Aktualisieren" jetzt "Aufraeumen" (rot). Loescht alle `*.json`-Statusdateien
+  im Status-Share des gewaehlten Tasks nach einer Sicherheitsabfrage. Zweck: veraltete
+  Eintraege entfernen (z.B. nach Geraete-Umbenennung, wenn alte Rechnernamen im Status
+  haengenbleiben). Die Clients legen ihre Statusdatei beim naechsten Start automatisch
+  neu an. Neue Modul-Funktion `Clear-ClientStatus` in `Modules/ClientStatus.psm1`.
+
 ## v3.1.2 (2026-08-19)
 
 ### Fix

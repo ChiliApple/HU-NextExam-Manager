@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.1.2'
+$script:ToolVersion = '3.1.3'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -2947,6 +2947,7 @@ $script:cmbClientTask    = Get-UI 'cmbClientTask'
 $script:lblClientShare   = Get-UI 'lblClientShare'
 $script:btnClientRefresh = Get-UI 'btnClientRefresh'
 $script:lstClients       = Get-UI 'lstClients'
+$script:btnClientClear   = Get-UI 'btnClientClear'
 
 function Refresh-ClientsList {
     $t = $script:cmbClientTask.SelectedItem
@@ -2987,6 +2988,36 @@ $script:btnClientRefresh.Add_Click({
     Show-LoadingOverlay
     try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
     try { Refresh-ClientsList } finally { Hide-LoadingOverlay }
+})
+$script:btnClientClear.Add_Click({
+    $t = $script:cmbClientTask.SelectedItem
+    if (-not $t -or -not $t.StatusSharePath) {
+        [System.Windows.MessageBox]::Show('Kein Task / Status-Share ausgewaehlt.', 'Status aufraeumen', 'OK', 'Warning') | Out-Null
+        return
+    }
+    $answer = [System.Windows.MessageBox]::Show(
+        "Alle Status-Eintraege dieses Shares wirklich loeschen?`n`nShare: $($t.StatusSharePath)`n`nDie Clients legen ihren Status beim naechsten Start automatisch neu an.",
+        "Status aufraeumen - $($t.DisplayName)", 'YesNo', 'Warning')
+    if ($answer -ne 'Yes') { return }
+
+    Show-LoadingOverlay
+    try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
+    try {
+        $res = Clear-ClientStatus -Path $t.StatusSharePath
+        Refresh-ClientsList
+        $msg = "$($res.Deleted) Datei(en) geloescht"
+        if ($res.Failed -gt 0) { $msg += ", $($res.Failed) fehlgeschlagen" }
+        $script:lblStatus.Text = "Status aufgeraeumt ($($t.DisplayName)): $msg"
+        Write-Log -Message "Status-Share aufgeraeumt ($($t.DisplayName)): $msg" -Level INFO -Source 'Clients'
+        if ($res.Failed -gt 0) {
+            [System.Windows.MessageBox]::Show("$msg`n`n" + ($res.Errors -join "`n"), 'Status aufraeumen', 'OK', 'Warning') | Out-Null
+        }
+    } catch {
+        Write-Log -Message "Status-Aufraeumen fehlgeschlagen: $_" -Level ERROR -Source 'Clients'
+        [System.Windows.MessageBox]::Show("Aufraeumen fehlgeschlagen:`n`n$_", 'Status aufraeumen', 'OK', 'Error') | Out-Null
+    } finally {
+        Hide-LoadingOverlay
+    }
 })
 
 # ========== Tool-Self-Update (Check gegen GitHub-Repo) ==========
