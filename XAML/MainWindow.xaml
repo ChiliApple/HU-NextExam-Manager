@@ -1005,16 +1005,13 @@
                         <Grid Margin="6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="btnShortcutUser"   Grid.Column="0" Content="Verknüpfung (mein Desktop)" Width="200"
-                                    ToolTip="Erzeugt HU-NextExam-Manager.exe (Starter mit Logo, ohne Konsolenfenster, UAC-Abfrage) und legt die Verknüpfung auf DEINEN Desktop. An Taskleiste anheftbar."/>
-                            <Button x:Name="btnShortcutPublic" Grid.Column="1" Content="Verknüpfung (alle Benutzer)" Width="200" Margin="6,0,0,0"
-                                    ToolTip="Wie links, aber auf den öffentlichen Desktop (C:\Users\Public\Desktop) - alle Benutzer dieses Rechners. Alte Verknüpfungen auf Start.vbs dieses Ordners werden ersetzt."/>
-                            <TextBlock x:Name="lblShortcutInfo" Grid.Column="2" Foreground="#888" FontSize="11" Margin="10,0,0,0"
+                            <Button x:Name="btnShortcut" Grid.Column="0" Content="Verknüpfung" Width="200"
+                                    ToolTip="Links: Desktop-Verknüpfung für DICH erstellen (HU-NextExam-Manager.exe mit Logo, ohne Konsolenfenster, an Taskleiste anheftbar)&#x0a;Rechts: Verknüpfung auf dem öffentlichen Desktop (alle Benutzer dieses Rechners)"/>
+                            <TextBlock x:Name="lblShortcutInfo" Grid.Column="1" Foreground="#888" FontSize="11" Margin="10,0,0,0"
                                        VerticalAlignment="Center" TextWrapping="Wrap"
-                                       Text="Starter-EXE wird lokal aus C#-Quelltext erzeugt (nicht im Repo). Tipp: Rechtsklick auf die Verknüpfung &gt; An Taskleiste anheften."/>
+                                       Text="Linksklick = mein Desktop, Rechtsklick = öffentlicher Desktop (alle Benutzer). Starter-EXE wird lokal erzeugt (nicht im Repo). Tipp: Verknüpfung per Rechtsklick an Taskleiste anheften."/>
                         </Grid>
                     </GroupBox>
                 </Grid>

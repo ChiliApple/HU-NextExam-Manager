@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.1.4'
+$script:ToolVersion = '3.1.5'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -680,10 +680,16 @@ function Invoke-NEMShortcut {
     }
 }
 
-$script:btnShortcutUser   = Get-UI 'btnShortcutUser'
-$script:btnShortcutPublic = Get-UI 'btnShortcutPublic'
-if ($script:btnShortcutUser)   { $script:btnShortcutUser.Add_Click({ Invoke-NEMShortcut }) }
-if ($script:btnShortcutPublic) { $script:btnShortcutPublic.Add_Click({ Invoke-NEMShortcut -AllUsers }) }
+# Ein Button wie im HU-AdminTool: Linksklick = eigener Desktop, Rechtsklick = oeffentlicher Desktop
+$script:btnShortcut = Get-UI 'btnShortcut'
+if ($script:btnShortcut) {
+    $script:btnShortcut.Add_Click({ Invoke-NEMShortcut })
+    $script:btnShortcut.Add_MouseRightButtonUp({
+        param($s, $e)
+        $e.Handled = $true
+        Invoke-NEMShortcut -AllUsers
+    })
+}
 
 function Show-ReleaseChangelog {
     if (-not $script:CurrentRelease) {

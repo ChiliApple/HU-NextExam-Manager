@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.1.5 (2026-09-30)
+
+### Geaendert
+- **Verknuepfung: ein Button statt zwei** (wie HU-AdminTool v2) — im Settings-Tab
+  "Desktop-Verknuepfung" gibt es nur noch den Button "Verknuepfung":
+  Linksklick = eigener Desktop, Rechtsklick = oeffentlicher Desktop (alle Benutzer,
+  mit Sicherheitsabfrage).
+
 ## v3.1.4 (2026-09-30)
 
 ### Feature
