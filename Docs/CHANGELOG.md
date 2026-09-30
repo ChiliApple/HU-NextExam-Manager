@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.1.4 (2026-09-30)
+
+### Feature
+- **Desktop-Verknuepfung aus den Settings** — neuer Bereich "Desktop-Verknuepfung"
+  im Settings-Tab mit zwei Buttons: *mein Desktop* und *alle Benutzer* (oeffentlicher
+  Desktop, mit Sicherheitsabfrage). Erzeugt lokal einen Starter
+  `HU-NextExam-Manager.exe` aus C#-Quelltext (Logo aus `Assets\icon.ico`, startet
+  PowerShell versteckt mit UAC-Abfrage, kein Konsolenfenster, an Taskleiste
+  anheftbar) und legt `HU-NextExam-Manager.lnk` darauf an. Alte Verknuepfungen auf
+  `Start.vbs`/EXE desselben Tool-Ordners werden dabei ersetzt. Faellt die EXE-Erzeugung
+  aus, zeigt die Verknuepfung auf `wscript.exe Start.vbs`. Muster wie HU-AdminTool v2.
+  Die EXE ist gitignored und wird von `Pull.ps1` nicht angefasst.
+
 ## v3.1.3 (2026-09-11)
 
 ### Feature

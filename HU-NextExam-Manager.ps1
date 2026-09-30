@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.1.3'
+$script:ToolVersion = '3.1.4'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -547,6 +547,143 @@ $script:btnTestConn.Add_Click({
     }
     [System.Windows.MessageBox]::Show(($msgs -join "`n"), 'Verbindungstest') | Out-Null
 })
+
+# ============================================================================
+# Starter HU-NextExam-Manager.exe + Desktop-Verknuepfung (Settings-Tab)
+# ============================================================================
+# Die EXE wird lokal aus C#-Quelltext erzeugt (nicht im Repo, gitignored):
+# startet powershell.exe unsichtbar (SW_HIDE) mit Administratorrechten (UAC) ->
+# kein Konsolenfenster, eigenes Logo, an die Taskleiste anheftbar.
+# Start.vbs bleibt als Alternative/Fallback erhalten. Muster wie HU-AdminTool v2.
+$script:LauncherSource = @'
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Windows.Forms;
+
+public static class HUNEMLauncher
+{
+    [STAThread]
+    public static int Main(string[] args)
+    {
+        string dir = AppDomain.CurrentDomain.BaseDirectory;
+        string ps1 = Path.Combine(dir, "HU-NextExam-Manager.ps1");
+        if (!File.Exists(ps1))
+        {
+            MessageBox.Show("HU-NextExam-Manager.ps1 nicht gefunden in:\n" + dir + "\n\nPull.ps1 ausfuehren, um die Dateien zu laden.", "HU-NextExam-Manager", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+        string ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
+        ProcessStartInfo psi = new ProcessStartInfo(ps, "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + ps1 + "\"");
+        psi.UseShellExecute = true;
+        psi.Verb = "runas";
+        psi.WindowStyle = ProcessWindowStyle.Hidden;
+        psi.WorkingDirectory = dir;
+        try { Process.Start(psi); }
+        catch (System.ComponentModel.Win32Exception) { return 2; }
+        return 0;
+    }
+}
+'@
+
+function New-NEMLauncher {
+    param([switch]$Force)
+    $exe = Join-Path $script:RootPath 'HU-NextExam-Manager.exe'
+    $ico = Join-Path $script:RootPath 'Assets\icon.ico'
+    if ((Test-Path -LiteralPath $exe) -and -not $Force) { return $true }
+    try {
+        if (Test-Path -LiteralPath $exe) { Remove-Item -LiteralPath $exe -Force -ErrorAction Stop }
+        $cp = New-Object System.CodeDom.Compiler.CompilerParameters
+        $cp.GenerateExecutable = $true
+        $cp.GenerateInMemory   = $false
+        $cp.OutputAssembly     = $exe
+        $cp.CompilerOptions    = '/target:winexe /optimize+' + $(if (Test-Path -LiteralPath $ico) { " /win32icon:`"$ico`"" } else { '' })
+        [void]$cp.ReferencedAssemblies.Add('System.dll')
+        [void]$cp.ReferencedAssemblies.Add('System.Windows.Forms.dll')
+        # eindeutiger Typname (mehrfaches Erzeugen in einer Sitzung)
+        $src = $script:LauncherSource -replace 'HUNEMLauncher', ('HUNEMLauncher' + [guid]::NewGuid().ToString('N'))
+        Add-Type -TypeDefinition $src -Language CSharp -CompilerParameters $cp -ErrorAction Stop
+        Write-Log -Message "Starter erzeugt: $exe" -Level INFO -Source 'Shortcut'
+        return (Test-Path -LiteralPath $exe)
+    } catch {
+        Write-Log -Message "Starter HU-NextExam-Manager.exe nicht erstellt: $($_.Exception.Message)" -Level WARN -Source 'Shortcut'
+        return (Test-Path -LiteralPath $exe)
+    }
+}
+
+# Verknuepfung auf dem Desktop (eigener Benutzer oder oeffentlicher Desktop = alle Benutzer).
+# Alte Verknuepfungen, die auf Start.vbs / die EXE DIESES Ordners zeigen (z.B. manuell
+# angelegt), werden entfernt, damit keine Doppelten am Desktop liegen.
+function New-NEMDesktopShortcut {
+    param([switch]$AllUsers)
+    $exe  = Join-Path $script:RootPath 'HU-NextExam-Manager.exe'
+    $vbs  = Join-Path $script:RootPath 'Start.vbs'
+    [void](New-NEMLauncher -Force)   # immer neu erzeugen (aktuelles Logo)
+    $desk = if ($AllUsers) { [Environment]::GetFolderPath('CommonDesktopDirectory') } else { [Environment]::GetFolderPath('Desktop') }
+    if (-not $desk) { throw 'Desktop-Ordner nicht gefunden' }
+    $lnk = Join-Path $desk 'HU-NextExam-Manager.lnk'
+    $removed = @()
+    $sh = New-Object -ComObject WScript.Shell
+    try {
+        # Alte Verknuepfungen auf diesen Tool-Ordner aufraeumen
+        foreach ($f in @(Get-ChildItem -LiteralPath $desk -Filter '*.lnk' -File -ErrorAction SilentlyContinue)) {
+            if ($f.FullName -eq $lnk) { continue }
+            try {
+                $o = $sh.CreateShortcut($f.FullName)
+                $hit = ($o.TargetPath -eq $vbs) -or ($o.TargetPath -eq $exe) -or ("$($o.Arguments)" -like "*$vbs*")
+                if ($hit) {
+                    Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
+                    $removed += $f.Name
+                    Write-Log -Message "Alte Verknuepfung entfernt: $($f.FullName)" -Level INFO -Source 'Shortcut'
+                }
+            } catch { Write-Log -Message "Verknuepfung $($f.Name) nicht geprueft/entfernt: $_" -Level WARN -Source 'Shortcut' }
+        }
+
+        $s = $sh.CreateShortcut($lnk)
+        if (Test-Path -LiteralPath $exe) {
+            $s.TargetPath   = $exe
+            $s.Arguments    = ''
+            $s.IconLocation = "$exe,0"
+        } else {
+            # Fallback: Start.vbs ueber wscript (UAC-Abfrage, versteckte Konsole)
+            $s.TargetPath   = Join-Path $env:SystemRoot 'System32\wscript.exe'
+            $s.Arguments    = "`"$vbs`""
+            $s.IconLocation = "$(Join-Path $script:RootPath 'Assets\icon.ico'),0"
+        }
+        $s.WorkingDirectory = $script:RootPath
+        $s.Description      = "HU-NextExam-Manager v$($script:ToolVersion)"
+        $s.Save()
+    } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sh) }
+    Write-Log -Message "Desktop-Verknuepfung erstellt: $lnk (Ziel: $(if (Test-Path -LiteralPath $exe) { $exe } else { 'wscript Start.vbs' }))" -Level INFO -Source 'Shortcut'
+    return [pscustomobject]@{ Path = $lnk; UsesExe = (Test-Path -LiteralPath $exe); Removed = $removed }
+}
+
+function Invoke-NEMShortcut {
+    param([switch]$AllUsers)
+    if ($AllUsers) {
+        $res = [System.Windows.MessageBox]::Show(
+            "Verknuepfung auf dem OEFFENTLICHEN Desktop erstellen?`n`n$([Environment]::GetFolderPath('CommonDesktopDirectory'))`n`nAlle Benutzer dieses Rechners sehen sie (Start erfordert trotzdem Administratorrechte).",
+            'Verknuepfung fuer alle Benutzer', 'YesNo', 'Question')
+        if ($res -ne 'Yes') { return }
+    }
+    try {
+        $r = New-NEMDesktopShortcut -AllUsers:$AllUsers
+        $msg = "Verknuepfung erstellt:`n$($r.Path)"
+        if (-not $r.UsesExe) { $msg += "`n`nHinweis: Starter-EXE konnte nicht erzeugt werden - Verknuepfung zeigt auf Start.vbs (Details im Log)." }
+        if ($r.Removed.Count -gt 0) { $msg += "`n`nAlte Verknuepfung(en) ersetzt: $($r.Removed -join ', ')" }
+        $msg += "`n`nTipp: Rechtsklick auf die Verknuepfung > An Taskleiste anheften."
+        Set-Status "Desktop-Verknuepfung erstellt: $($r.Path)"
+        [System.Windows.MessageBox]::Show($msg, 'Verknuepfung', 'OK', 'Information') | Out-Null
+    } catch {
+        Write-Log -Message "Verknuepfung fehlgeschlagen: $($_.Exception.Message)" -Level ERROR -Source 'Shortcut'
+        [System.Windows.MessageBox]::Show("Verknuepfung fehlgeschlagen:`n`n$($_.Exception.Message)", 'Fehler', 'OK', 'Error') | Out-Null
+    }
+}
+
+$script:btnShortcutUser   = Get-UI 'btnShortcutUser'
+$script:btnShortcutPublic = Get-UI 'btnShortcutPublic'
+if ($script:btnShortcutUser)   { $script:btnShortcutUser.Add_Click({ Invoke-NEMShortcut }) }
+if ($script:btnShortcutPublic) { $script:btnShortcutPublic.Add_Click({ Invoke-NEMShortcut -AllUsers }) }
 
 function Show-ReleaseChangelog {
     if (-not $script:CurrentRelease) {

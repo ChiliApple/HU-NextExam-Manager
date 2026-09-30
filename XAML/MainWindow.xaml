@@ -822,6 +822,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" MinHeight="250"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <!-- Row 0: Bestehende Task-Konfiguration -->
@@ -996,6 +997,24 @@
                                 <Button x:Name="btnMDMTenantRemove" Content="Entfernen"     Width="120" Margin="0,0,0,4"/>
                                 <Button x:Name="btnMDMTenantSaveCred" Content="Secret speichern" Width="120" Margin="0,8,0,0" ToolTip="Client-Secret DPAPI-verschluesselt speichern"/>
                             </StackPanel>
+                        </Grid>
+                    </GroupBox>
+
+                    <!-- Row 2: Desktop-Verknüpfung (Starter-EXE mit Logo, ohne Konsolenfenster) -->
+                    <GroupBox Header="Desktop-Verknüpfung" Grid.Row="2" Margin="0,6,0,0">
+                        <Grid Margin="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="btnShortcutUser"   Grid.Column="0" Content="Verknüpfung (mein Desktop)" Width="200"
+                                    ToolTip="Erzeugt HU-NextExam-Manager.exe (Starter mit Logo, ohne Konsolenfenster, UAC-Abfrage) und legt die Verknüpfung auf DEINEN Desktop. An Taskleiste anheftbar."/>
+                            <Button x:Name="btnShortcutPublic" Grid.Column="1" Content="Verknüpfung (alle Benutzer)" Width="200" Margin="6,0,0,0"
+                                    ToolTip="Wie links, aber auf den öffentlichen Desktop (C:\Users\Public\Desktop) - alle Benutzer dieses Rechners. Alte Verknüpfungen auf Start.vbs dieses Ordners werden ersetzt."/>
+                            <TextBlock x:Name="lblShortcutInfo" Grid.Column="2" Foreground="#888" FontSize="11" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" TextWrapping="Wrap"
+                                       Text="Starter-EXE wird lokal aus C#-Quelltext erzeugt (nicht im Repo). Tipp: Rechtsklick auf die Verknüpfung &gt; An Taskleiste anheften."/>
                         </Grid>
                     </GroupBox>
                 </Grid>
