@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---------|-----------|
-| 2.x     | Yes       |
-| < 2.0   | No        |
+| 3.2+    | Yes       |
+| < 3.2   | No (unsigned updates - please update) |
 
 ## Scope
 
@@ -37,5 +37,11 @@ addressed in a patch release within 7 days.
   Group Policy Creator Owners rights.
 - **Network Shares:** MSI share paths should have restricted write access
   (admin-only write, authenticated users read).
-- **Pull Script:** The GitHub PAT in `config.json` should be a fine-grained
-  read-only token scoped to this repository only.
+- **Signed updates (v3.2.0+):** Updates are only taken from GitHub releases that carry
+  `HU-NextExam-Manager-files.sha256` (SHA256 of every file, built by CI) and a detached
+  PKCS#7 signature `HU-NextExam-Manager-files.sha256.p7s` made with the publisher's
+  certificate (thumbprint `1B669AE240DA1A91043C4576763D9F8E0BF762FA`, built into the tool).
+  The private key never touches GitHub. All files are downloaded and verified before any
+  file is replaced.
+- **Pull Script:** The optional GitHub PAT in `config.json` is only used for rate limits and
+  should be a fine-grained read-only token scoped to this repository only.

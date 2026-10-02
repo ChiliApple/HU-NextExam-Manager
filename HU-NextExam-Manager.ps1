@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     HU-NextExam-Manager - WPF-Tool fuer Next-Exam Versionsverwaltung.
@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.1.5'
+$script:ToolVersion = '3.2.0'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -126,7 +126,7 @@ Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName Microsoft.VisualBasic
 
 # --- Module laden (Import-Module in Script = Global-Scope, sichtbar fuer Event-Handler) ---
-foreach ($m in 'Logging','Config','MSIPull','WMIFilter','GPOSetup','AutoPull','ClientStatus','MDMDeploy') {
+foreach ($m in 'Logging','Config','MSIPull','WMIFilter','GPOSetup','AutoPull','ClientStatus','MDMDeploy','Update') {
     $mp = Join-Path $script:ModulesPath "$m.psm1"
     if (-not (Test-Path $mp)) { throw "Modul fehlt: $mp" }
     Import-Module $mp -Force -Global -DisableNameChecking -ErrorAction Stop
@@ -1852,6 +1852,7 @@ $script:lstDashTasks      = Get-UI 'lstDashTasks'
 
 function Update-Dashboard {
     $script:lblDashToolVer.Text    = "Tool-Version: $($script:ToolVersion)"
+    try { Update-NEMUpdateInfo } catch {}
     $script:lblDashConfigPath.Text = "Config: $script:RootPath\config.json"
     $script:lblDashLogPath.Text    = "Log:    $(Expand-LogPath)"
 
@@ -3163,12 +3164,15 @@ $script:btnClientClear.Add_Click({
     }
 })
 
-# ========== Tool-Self-Update (Check gegen GitHub-Repo) ==========
-$script:UpdateRepoOwner  = 'ChiliApple'
-$script:UpdateRepoName   = 'HU-NextExam-Manager'
-$script:UpdateApiUrl     = "https://raw.githubusercontent.com/$($script:UpdateRepoOwner)/$($script:UpdateRepoName)/main/HU-NextExam-Manager.ps1"
-$script:UpdateAvailable  = $false
-$script:UpdateRemoteVer  = ''
+# ========== Tool-Update (GitHub-Releases, Pruefsumme + Signatur) ==========
+# Vorlage: HUMig v2.0.56. Update-Funktionen in Modules\Update.psm1 (Bereich HMUpdateLib identisch in Pull.ps1).
+# Kanal Stabil = freigegebene Releases, Test = auch Vorab-Releases. Angeboten/installiert werden nur Releases mit
+# gueltiger Signatur des eingebauten Herausgeber-Zertifikats (abschaltbar nur bewusst: Settings > Tool-Update).
+$script:UpdateLib       = Join-Path $script:ModulesPath 'Update.psm1'
+$script:UpdateAvailable = $false
+$script:UpdateRemoteVer = ''
+$script:UpdateCfg       = $null
+$script:NEMJobs         = @{}
 
 function ConvertTo-CleanVersion {
     param([string]$V)
@@ -3177,72 +3181,456 @@ function ConvertTo-CleanVersion {
     try { return [Version]$clean } catch { return $null }
 }
 
-function Invoke-UpdateCheck {
-    try {
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        $h = @{
-            'User-Agent'  = 'HU-NextExam-Manager-UpdateCheck'
+# Hintergrund-Job (eigener Runspace) + DispatcherTimer; OnDone laeuft im UI-Thread mit dem ersten Ergebnis
+function Start-NEMJob {
+    param([string]$Name, [scriptblock]$Work, [object[]]$ArgumentList = @(), [scriptblock]$OnDone, [int]$TimeoutSec = 60)
+    if ($script:NEMJobs.ContainsKey($Name)) { return }
+    $rs = [runspacefactory]::CreateRunspace(); $rs.Open()
+    $ps = [powershell]::Create(); $ps.Runspace = $rs
+    [void]$ps.AddScript($Work.ToString())
+    foreach ($a in $ArgumentList) { [void]$ps.AddArgument($a) }
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(300)
+    $timer.Tag = $Name
+    $script:NEMJobs[$Name] = @{ PS = $ps; RS = $rs; H = $ps.BeginInvoke(); Done = $OnDone; Start = Get-Date; Timeout = $TimeoutSec }
+    $timer.Add_Tick({
+        param($s, $e)
+        $n = "$($s.Tag)"; $j = $script:NEMJobs[$n]
+        if (-not $j) { $s.Stop(); return }
+        $val = $null
+        if (-not $j.H.IsCompleted) {
+            if (((Get-Date) - $j.Start).TotalSeconds -lt $j.Timeout) { return }
+            try { $j.PS.Stop() } catch {}
+            $val = 'ERR:Zeitueberschreitung'
+        } else {
+            try {
+                $res = $j.PS.EndInvoke($j.H)
+                if ($res -and $res.Count) { $val = $res[0] }
+                elseif ($j.PS.HadErrors) { $val = "ERR:$($j.PS.Streams.Error[0])" }
+            } catch { $val = "ERR:$($_.Exception.Message)" }
         }
-        $r = Invoke-WebRequest -Uri $script:UpdateApiUrl -Headers $h -UseBasicParsing -ErrorAction Stop
-        $text = if ($r.Content -is [byte[]]) {
-            [System.Text.Encoding]::UTF8.GetString($r.Content)
-        } else { [string]$r.Content }
-        # Backtick-Escape damit $script literal bleibt statt expandiert
-        if ($text -match "\`$script:ToolVersion\s*=\s*'([^']+)'") {
-            $remote = $Matches[1].Trim()
+        $s.Stop()
+        $script:NEMJobs.Remove($n)
+        try { $j.PS.Dispose() } catch {}
+        try { $j.RS.Close(); $j.RS.Dispose() } catch {}
+        if ($j.Done) { try { & $j.Done $val } catch { Write-Log -Message "Job $n OnDone: $_" -Level ERROR -Source 'Update' } }
+    })
+    $timer.Start()
+}
+
+function Get-NEMReadToken {
+    try { if ($script:Config.ToolSettings.GitHubToken) { return "$($script:Config.ToolSettings.GitHubToken)".Trim() } } catch {}
+    return ''
+}
+function Get-NEMInstalledInfo {
+    $f = Join-Path $script:RootPath 'installed.json'
+    if (Test-Path -LiteralPath $f) { try { return (Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json) } catch {} }
+    return $null
+}
+function Format-NEMChannel([string]$Channel) { if ($Channel -eq 'Test') { 'Test' } elseif ($Channel -eq 'Branch') { 'Entwicklung (Branch)' } else { 'Stabil' } }
+
+# Info-Zeile (Dashboard > Tool, Settings > Tool-Update)
+function Update-NEMUpdateInfo {
+    $uc = Get-HMUpdateConfig $script:RootPath
+    $script:UpdateCfg = $uc
+    $inst = Get-NEMInstalledInfo
+    $chk = if ($inst -and "$($inst.Check)") { "$($inst.Check)" -replace '\b([0-9A-Fa-f]{8})[0-9A-Fa-f]{32}\b', '$1...' } else { '' }
+    $t = "Update: Kanal $(if ($uc.UseBranch) { "Branch $($uc.Branch)" } else { Format-NEMChannel $uc.Channel })$(if ($uc.RequireSignature) { ', nur signierte Updates' } else { ', OHNE Signaturpflicht' })"
+    if ($chk) { $t += "  |  installiert $($inst.Date), geprueft: $chk" }
+    elseif ($inst -and "$($inst.Version)") { $t += "  |  installiert $($inst.Date)" }
+    else { $t += '  |  Installation ohne Pruefnachweis (vor 3.2.0 oder manuell kopiert)' }
+    if ($script:lblDashUpdInfo) { $script:lblDashUpdInfo.Text = $t }
+    if ($script:lblUpdInfo) { $script:lblUpdInfo.Text = $t }
+}
+
+function Invoke-UpdateCheck {
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    $script:UpdateCfg = $cfg
+    $script:btnUpdate.Content = 'Pruefe...'
+    Start-NEMJob -Name 'UpdateCheck' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, (Get-NEMReadToken), $cfg.Owner, $cfg.Repo, $cfg.Channel, [bool]$cfg.RequireSignature, [bool]$cfg.UseBranch, $cfg.Branch) -Work {
+        param($lib, $token, $owner, $repo, $channel, $signed, $useBranch, $branch)
+        try {
+            Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop
+            try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+            if ($useBranch) {
+                $u = "https://raw.githubusercontent.com/$owner/$repo/$branch/HU-NextExam-Manager.ps1?t=$([DateTime]::UtcNow.Ticks)"
+                $r = Invoke-WebRequest $u -Headers @{ 'User-Agent' = 'HU-NextExam-Manager-UpdateCheck' } -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+                $text = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
+                if ($text -match "\`$script:ToolVersion\s*=\s*'([^']+)'") { return [pscustomobject]@{ Version = $Matches[1]; Tag = "Branch $branch"; Prerelease = $false } }
+                return 'ERR:Version im Branch nicht gefunden'
+            }
+            try { $list = @(Get-HMReleases $owner $repo $token) }
+            catch {
+                $code = 0; try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+                if ($token -and $code -eq 401) { $list = @(Get-HMReleases $owner $repo '') } else { throw }
+            }
+            $rel = Select-HMRelease $list $channel -SignedOnly:$signed
+            if (-not $rel) { return 'NONE' }
+            return [pscustomobject]@{ Version = "$($rel.Version)"; Tag = $rel.Tag; Prerelease = $rel.Prerelease }
+        } catch {
+            $code = 0; try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+            if ($code -in 401, 403, 404) { return "AUTH:$code" }
+            return "ERR:$($_.Exception.Message)"
+        }
+    } -OnDone {
+        param($r)
+        $cfg = $script:UpdateCfg
+        $chan = if ($cfg.UseBranch) { "Branch $($cfg.Branch)" } else { "Kanal $(Format-NEMChannel $cfg.Channel)" }
+        $script:btnUpdate.IsEnabled = $true
+        if ($r -and $r -isnot [string] -and $r.Version) {
             $lv = ConvertTo-CleanVersion $script:ToolVersion
-            $rv = ConvertTo-CleanVersion $remote
-            Write-Log -Message "Update-Check: Lokal=$($script:ToolVersion) | Remote=$remote" -Level INFO -Source 'Update'
+            $rv = ConvertTo-CleanVersion "$($r.Version)"
+            Write-Log -Message "Update-Check: Lokal=$($script:ToolVersion) | Remote=$($r.Version) ($($r.Tag), $chan)" -Level INFO -Source 'Update'
             if ($lv -and $rv -and ($rv -gt $lv)) {
                 $script:UpdateAvailable = $true
-                $script:UpdateRemoteVer = $remote
-                $script:btnUpdate.Content    = "Update v$remote"
-                $script:btnUpdate.IsEnabled  = $true
+                $script:UpdateRemoteVer = "$($r.Version)"
+                $script:btnUpdate.Content    = "Update v$($r.Version)$(if ($r.Prerelease) { ' (Test)' })"
                 $script:btnUpdate.Background = [System.Windows.Media.Brushes]::Gold
                 $script:btnUpdate.Foreground = [System.Windows.Media.Brushes]::Black
-                Set-Status "Update verfuegbar: v$remote"
-            } else {
-                $script:btnUpdate.Content   = "Aktuell v$($script:ToolVersion)"
-                $script:btnUpdate.IsEnabled = $true
+                Set-Status "Update verfuegbar: v$($r.Version)$(if ($r.Prerelease) { ' (Test)' }) - $chan"
+                return
             }
+            $script:UpdateAvailable = $false
+            $script:btnUpdate.Content = "Aktuell v$($script:ToolVersion)"
+        } elseif ("$r" -eq 'NONE') {
+            $script:UpdateAvailable = $false
+            $script:btnUpdate.Content = "Aktuell v$($script:ToolVersion)"
+            Write-Log -Message "Update-Check: kein $(if ($cfg.RequireSignature) { 'signiertes ' })Release im $chan" -Level INFO -Source 'Update'
         } else {
-            $script:btnUpdate.Content   = 'Update-Check fehl'
-            $script:btnUpdate.IsEnabled = $true
-            Write-Log -Message 'Update-Check: Regex ohne Match' -Level WARN -Source 'Update'
+            $script:UpdateAvailable = $false
+            $script:btnUpdate.Content = 'Offline'
+            Write-Log -Message "Update-Check nicht moeglich: $("$r" -replace '^(ERR|AUTH):', '')" -Level WARN -Source 'Update'
         }
-    } catch {
-        $script:btnUpdate.Content   = 'Offline'
-        $script:btnUpdate.IsEnabled = $true
-        Write-Log -Message "Update-Check-Fehler: $_" -Level WARN -Source 'Update'
+        $script:btnUpdate.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
+        $script:btnUpdate.ClearValue([System.Windows.Controls.Control]::ForegroundProperty)
     }
 }
 
-$script:btnUpdate.Add_Click({
-    if (-not $script:UpdateAvailable) {
-        # Kein Update bekannt - erneut pruefen
-        $script:btnUpdate.Content = 'Pruefe...'
-        try { Invoke-UpdateCheck } catch {}
-        return
-    }
+# Pull.ps1 starten (wartet auf das Ende dieses Prozesses, laedt + prueft, startet das Tool neu)
+function Start-NEMPull([string]$Version = '') {
+    $pull = Join-Path $script:RootPath 'Pull.ps1'
+    if (-not (Test-Path -LiteralPath $pull)) { [System.Windows.MessageBox]::Show("Pull.ps1 nicht gefunden: $pull", 'Fehler', 'OK', 'Error') | Out-Null; return }
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    $what = if ($Version) { "Version $Version" } elseif ($cfg.UseBranch) { "den Entwicklungsstand (Branch $($cfg.Branch), ohne Pruefsumme)" } else { "v$($script:UpdateRemoteVer) (Kanal $(Format-NEMChannel $cfg.Channel))" }
     $res = [System.Windows.MessageBox]::Show(
-        "Tool wird neu gestartet:`n`n  Aktuell: v$($script:ToolVersion)`n  Neu:     v$($script:UpdateRemoteVer)`n`nFortfahren?",
-        "Update auf v$($script:UpdateRemoteVer)", 'YesNo', 'Warning')
+        "Tool schliessen, $what von GitHub laden$(if ($Version -or -not $cfg.UseBranch) { ', pruefen' }) und neu starten?`n`n  Aktuell: v$($script:ToolVersion)`n`nconfig.json und Einstellungen bleiben erhalten.",
+        'Tool-Update', 'YesNo', 'Warning')
     if ($res -ne 'Yes') { return }
-    $pullScript = Join-Path $script:RootPath 'Pull.ps1'
-    if (-not (Test-Path $pullScript)) {
-        [System.Windows.MessageBox]::Show("Pull.ps1 nicht gefunden: $pullScript", 'Fehler', 'OK', 'Error') | Out-Null
-        return
-    }
+    $pa = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pull`"", '-WaitPid', $PID)
+    if ($Version) { $pa += @('-Version', $Version) }
     try {
-        $exe = (Get-Command powershell.exe).Source
-        Start-Process $exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-File',$pullScript | Out-Null
-        Set-Status 'Pull laeuft in separatem Fenster. Tool schliesst in 3s.'
-        Start-Sleep -Seconds 3
+        Start-Process powershell.exe -ArgumentList $pa -WorkingDirectory $script:RootPath | Out-Null
+        Write-Log -Message "Update gestartet: $what" -Level INFO -Source 'Update'
         $script:Window.Close()
     } catch {
         [System.Windows.MessageBox]::Show("Update-Start fehlgeschlagen:`n$_", 'Fehler', 'OK', 'Error') | Out-Null
     }
+}
+
+$script:btnUpdate.Add_Click({
+    if (-not $script:UpdateAvailable) { Invoke-UpdateCheck; return }
+    Start-NEMPull
 })
+
+# --- Andere Version / Vorversion waehlen
+function Show-NEMVersionPicker {
+    Set-Status 'Versionen werden von GitHub gelesen ...'
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    Start-NEMJob -Name 'Versions' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, (Get-NEMReadToken), $cfg.Owner, $cfg.Repo) -Work {
+        param($lib, $token, $owner, $repo)
+        try {
+            Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop
+            try { $l = @(Get-HMReleases $owner $repo $token) } catch { if ($token) { $l = @(Get-HMReleases $owner $repo '') } else { throw } }
+            return [pscustomobject]@{ Items = $l; Err = '' }
+        } catch { return [pscustomobject]@{ Items = @(); Err = "$($_.Exception.Message)" } }
+    } -OnDone {
+        param($r)
+        if (-not $r -or $r -is [string] -or $r.Err) { Set-Status "Versionen nicht lesbar: $(if ($r -is [string]) { $r } else { $r.Err })"; return }
+        $list = @($r.Items | Where-Object { $_ -and $_.Version })
+        if (-not $list.Count) { Set-Status 'Keine Releases gefunden.'; return }
+        $req = (Get-HMUpdateConfig $script:RootPath).RequireSignature
+        $lv = ConvertTo-CleanVersion $script:ToolVersion
+        $rows = foreach ($x in $list) {
+            $cmp = 0; try { $cmp = ([Version]"$($x.Version)").CompareTo($lv) } catch { }
+            $first = @("$($x.Notes)" -split "`r?`n" | Where-Object { "$_".Trim() -and "$_" -notmatch '^\s*#' } | ForEach-Object { ("$_".Trim().TrimStart('-', ' ', '*') -replace '\*\*|`', '') })[0]
+            [pscustomobject]@{
+                Version = "$($x.Version)"; Kanal = $(if ($x.Prerelease) { 'Test' } else { 'Stabil' })
+                Stand = $(if ($cmp -eq 0) { 'installiert' } elseif ($cmp -lt 0) { 'aelter' } else { 'neuer' })
+                Datum = "$($x.Date)"; Pruefsumme = $(if ($x.ManifestUrl) { 'ja' } else { 'nein' }); Signatur = $(if ($x.SignatureUrl) { 'ja' } else { 'nein' })
+                Aenderungen = "$first"
+            }
+        }
+        $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="HU-NextExam-Manager - Version waehlen (Vorversion / Test-Version)" Width="1050" Height="500" WindowStartupLocation="CenterOwner"
+        Background="#1E1E1E" Foreground="#E0E0E0">
+  <DockPanel Margin="10">
+    <TextBlock x:Name="lblInfo" DockPanel.Dock="Top" TextWrapping="Wrap" Margin="0,0,0,8" Foreground="#C0C0C0"/>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+      <Button x:Name="btnInstall" Content="Diese Version installieren" Padding="12,4" Margin="0,0,8,0" Background="#2E7D32" Foreground="White"/>
+      <Button x:Name="btnClose" Content="Schliessen" Padding="12,4" IsCancel="True"/>
+    </StackPanel>
+    <ListView x:Name="lst" Background="#252526" Foreground="#E0E0E0" SelectionMode="Single">
+      <ListView.View>
+        <GridView>
+          <GridViewColumn Header="Version" Width="80" DisplayMemberBinding="{Binding Version}"/>
+          <GridViewColumn Header="Kanal" Width="65" DisplayMemberBinding="{Binding Kanal}"/>
+          <GridViewColumn Header="Stand" Width="80" DisplayMemberBinding="{Binding Stand}"/>
+          <GridViewColumn Header="Datum" Width="115" DisplayMemberBinding="{Binding Datum}"/>
+          <GridViewColumn Header="Pruefsumme" Width="80" DisplayMemberBinding="{Binding Pruefsumme}"/>
+          <GridViewColumn Header="Signatur" Width="70" DisplayMemberBinding="{Binding Signatur}"/>
+          <GridViewColumn Header="Aenderungen" Width="500" DisplayMemberBinding="{Binding Aenderungen}"/>
+        </GridView>
+      </ListView.View>
+    </ListView>
+  </DockPanel>
+</Window>
+'@
+        $w = [System.Windows.Markup.XamlReader]::Parse($xaml)
+        $w.Owner = $script:Window
+        $w.FindName('lblInfo').Text = "Installiert: v$($script:ToolVersion) - Version markieren, dann 'Diese Version installieren'. config.json und Einstellungen bleiben erhalten.$(if ($req) { ' Nur signierte Versionen sind installierbar.' } else { ' ACHTUNG: Signaturpflicht ist ausgeschaltet.' })"
+        $lst = $w.FindName('lst'); $lst.ItemsSource = @($rows)
+        $script:VersionPickerWin = $w
+        $w.FindName('btnClose').Add_Click({ $script:VersionPickerWin.Close() })
+        $w.FindName('btnInstall').Add_Click({
+            $win = $script:VersionPickerWin
+            $sel = $win.FindName('lst').SelectedItem
+            if (-not $sel) { return }
+            if ((Get-HMUpdateConfig $script:RootPath).RequireSignature -and "$($sel.Signatur)" -ne 'ja') {
+                [System.Windows.MessageBox]::Show($win, "Version $($sel.Version) ist nicht signiert und kann nicht installiert werden (nur signierte Updates - Settings > Tool-Update).", 'Tool-Update', 'OK', 'Warning') | Out-Null
+                return
+            }
+            $v = "$($sel.Version)"
+            $win.Close()
+            Start-NEMPull -Version $v
+        })
+        Set-Status "$($list.Count) Versionen gelesen"
+        [void]$w.ShowDialog()
+    }
+}
+
+# --- Release signieren / freigeben - nur auf dem PC des Herausgebers (privater Schluessel des Signatur-Zertifikats)
+function Get-NEMSignTokenFile { return (Join-Path $env:APPDATA 'HU-NextExam\GitHubSignToken.xml') }
+function Read-NEMSignToken {
+    $f = Get-NEMSignTokenFile
+    if (Test-Path -LiteralPath $f) { try { $c = Import-Clixml -Path $f; if ($c -is [System.Management.Automation.PSCredential]) { return $c.GetNetworkCredential().Password.Trim() } } catch {} }
+    return ''
+}
+function Get-NEMSignToken {
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    $tok = Read-NEMSignToken
+    if ($tok) { return $tok }
+    $c = Get-Credential -UserName 'github' -Message "GitHub-Token mit Schreibrecht fuer $($cfg.Owner)/$($cfg.Repo) als Kennwort eingeben (Fine-grained PAT, 'Contents: Read and write'). Wird verschluesselt nur fuer deinen Windows-Benutzer gespeichert."
+    if (-not $c) { return '' }
+    $tok = $c.GetNetworkCredential().Password.Trim()
+    if (-not $tok) { return '' }
+    $f = Get-NEMSignTokenFile
+    try { New-Item -ItemType Directory -Path (Split-Path $f -Parent) -Force | Out-Null; $c | Export-Clixml -Path $f -Force } catch { Write-Log -Message "Sign-Token nicht gespeichert: $_" -Level WARN -Source 'Update' }
+    return $tok
+}
+function Test-NEMCanSign { return [bool](Get-HMSigningCert (Get-HMUpdateConfig $script:RootPath).SignerThumbprint) }
+
+function Start-NEMReleaseSigning {
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    if (-not (Get-HMSigningCert $cfg.SignerThumbprint)) { [System.Windows.MessageBox]::Show("Signatur-Zertifikat $($cfg.SignerThumbprint) mit privatem Schluessel ist auf diesem PC (Benutzer $env:USERNAME) nicht vorhanden.", 'Release signieren', 'OK', 'Error') | Out-Null; return }
+    $tok = Get-NEMSignToken
+    if (-not $tok) { return }
+    $script:SignCtx = [pscustomobject]@{ Owner = $cfg.Owner; Repo = $cfg.Repo; Thumb = $cfg.SignerThumbprint; Token = $tok }
+    Set-Status 'Releases ohne Signatur werden gesucht ...'
+    Start-NEMJob -Name 'SignList' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, $tok, $cfg.Owner, $cfg.Repo) -Work {
+        param($lib, $tok, $owner, $repo)
+        try {
+            Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop
+            $l = @(Get-HMReleases $owner $repo $tok | Where-Object { $_.ManifestUrl -and -not $_.SignatureUrl })
+            return [pscustomobject]@{ Tags = @($l | ForEach-Object { "$($_.Tag)" }); Err = '' }
+        } catch { return [pscustomobject]@{ Tags = @(); Err = "$($_.Exception.Message)" } }
+    } -OnDone {
+        param($r)
+        if (-not $r -or $r -is [string] -or $r.Err) { Set-Status "Releases nicht lesbar: $(if ($r -is [string]) { $r } else { $r.Err })"; return }
+        $tags = @($r.Tags | Where-Object { $_ })
+        if (-not $tags.Count) { Set-Status 'Alle Releases mit Pruefsumme sind bereits signiert.'; [System.Windows.MessageBox]::Show('Alle Releases mit Pruefsumme sind bereits signiert.', 'Release signieren', 'OK', 'Information') | Out-Null; return }
+        $a = [System.Windows.MessageBox]::Show("Diese Releases jetzt mit deinem Zertifikat signieren?`n`n$($tags -join ', ')`n`nDanach werden sie allen HU-NextExam-Manager-Installationen als Update angeboten (je nach Kanal Stabil/Test).", 'Release signieren', 'YesNo', 'Question')
+        if ($a -ne 'Yes') { return }
+        Set-Status "Signiere $($tags -join ', ') ..."
+        $sc = $script:SignCtx
+        Start-NEMJob -Name 'Sign' -TimeoutSec 180 -ArgumentList @($script:UpdateLib, $sc.Owner, $sc.Repo, $sc.Thumb, $sc.Token, [string[]]$tags) -Work {
+            param($lib, $owner, $repo, $tp, $tok, $tags)
+            try { Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop; return [pscustomobject]@{ Items = @(Invoke-HMReleaseSigning $owner $repo $tp $tok $tags); Err = '' } }
+            catch { return [pscustomobject]@{ Items = @(); Err = "$($_.Exception.Message)" } }
+        } -OnDone {
+            param($res)
+            $script:SignCtx = $null
+            if (-not $res -or $res -is [string] -or $res.Err) { $m = "Signieren fehlgeschlagen: $(if ($res -is [string]) { $res } else { $res.Err })"; Set-Status $m; [System.Windows.MessageBox]::Show($m, 'Release signieren', 'OK', 'Error') | Out-Null; return }
+            $items = @($res.Items | Where-Object { $_ })
+            foreach ($x in $items) { Write-Log -Message "Release signieren $($x.Tag): $($x.Text)" -Level $(if ($x.Ok) { 'INFO' } else { 'ERROR' }) -Source 'Update' }
+            $msg = ($items | ForEach-Object { "$($_.Tag): $($_.Text)" }) -join "`n"
+            if (@($items | Where-Object { -not $_.Ok -and "$($_.Text)" -match 'Schreibrecht' }).Count) {
+                Remove-Item -LiteralPath (Get-NEMSignTokenFile) -Force -ErrorAction SilentlyContinue
+                $msg += "`n`nGespeicherter Schreib-Token geloescht - beim naechsten Signieren neu eingeben."
+            }
+            Set-Status ($msg -replace "`n", ' | ')
+            [System.Windows.MessageBox]::Show($msg, 'Release signieren', 'OK', $(if (@($items | Where-Object { -not $_.Ok }).Count) { 'Warning' } else { 'Information' })) | Out-Null
+            Invoke-UpdateCheck
+        }
+    }
+}
+
+function Start-NEMReleasePublish {
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    $tok = Get-NEMSignToken
+    if (-not $tok) { return }
+    $script:SignCtx = [pscustomobject]@{ Owner = $cfg.Owner; Repo = $cfg.Repo; Thumb = $cfg.SignerThumbprint; Token = $tok }
+    Set-Status 'Vorab-Releases werden gesucht ...'
+    Start-NEMJob -Name 'PubList' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, $tok, $cfg.Owner, $cfg.Repo) -Work {
+        param($lib, $tok, $owner, $repo)
+        try {
+            Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop
+            $l = @(Get-HMReleases $owner $repo $tok | Where-Object { $_.Prerelease })
+            return [pscustomobject]@{ Items = @($l | ForEach-Object { [pscustomobject]@{ Tag = "$($_.Tag)"; Signed = [bool]$_.SignatureUrl } }); Err = '' }
+        } catch { return [pscustomobject]@{ Items = @(); Err = "$($_.Exception.Message)" } }
+    } -OnDone {
+        param($r)
+        if (-not $r -or $r -is [string] -or $r.Err) { Set-Status "Releases nicht lesbar: $(if ($r -is [string]) { $r } else { $r.Err })"; return }
+        $all = @($r.Items | Where-Object { $_ })
+        if (-not $all.Count) { [System.Windows.MessageBox]::Show('Keine Vorab-Releases (Kanal Test) vorhanden.', 'Release freigeben', 'OK', 'Information') | Out-Null; return }
+        $signed = @($all | Where-Object { $_.Signed })
+        if (-not $signed.Count) { [System.Windows.MessageBox]::Show("Kein Vorab-Release ist signiert ($(($all | ForEach-Object { $_.Tag }) -join ', ')).`n`nZuerst 'Release signieren'.", 'Release freigeben', 'OK', 'Warning') | Out-Null; return }
+        $tag = $signed[0].Tag
+        $a = [System.Windows.MessageBox]::Show("$tag freigeben?`n`nDas Release wird 'Latest' und allen Installationen im Kanal Stabil als Update angeboten.`nVorher im Kanal Test geprueft?", 'Release freigeben', 'YesNo', 'Question')
+        if ($a -ne 'Yes') { return }
+        $sc = $script:SignCtx
+        Start-NEMJob -Name 'Publish' -TimeoutSec 60 -ArgumentList @($script:UpdateLib, $sc.Owner, $sc.Repo, $tag, $sc.Token, $sc.Thumb) -Work {
+            param($lib, $owner, $repo, $tag, $tok, $tp)
+            try { Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop; return [pscustomobject]@{ Text = (Publish-HMRelease $owner $repo $tag $tok $tp); Err = '' } }
+            catch {
+                $code = 0; try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+                return [pscustomobject]@{ Text = ''; Err = $(if ($code -in 401, 403, 404) { "kein Schreibrecht (HTTP $code) - Token pruefen" } else { "$($_.Exception.Message)" }) }
+            }
+        } -OnDone {
+            param($res)
+            $script:SignCtx = $null
+            if (-not $res -or $res -is [string] -or $res.Err) {
+                $m = "Freigabe fehlgeschlagen: $(if ($res -is [string]) { $res } else { $res.Err })"
+                if ("$m" -match 'Schreibrecht') { Remove-Item -LiteralPath (Get-NEMSignTokenFile) -Force -ErrorAction SilentlyContinue; $m += "`n`nGespeicherter Schreib-Token geloescht." }
+                Write-Log -Message $m -Level ERROR -Source 'Update'; Set-Status ($m -replace "`n", ' ')
+                [System.Windows.MessageBox]::Show($m, 'Release freigeben', 'OK', 'Error') | Out-Null; return
+            }
+            Write-Log -Message $res.Text -Level INFO -Source 'Update'; Set-Status $res.Text
+            [System.Windows.MessageBox]::Show($res.Text, 'Release freigeben', 'OK', 'Information') | Out-Null
+            Invoke-UpdateCheck
+        }
+    }
+}
+
+# --- Rechtsklick auf Update: andere Version / Einstellungen / Herausgeber-Funktionen
+$cmUpd = New-Object System.Windows.Controls.ContextMenu
+$miVer = New-Object System.Windows.Controls.MenuItem; $miVer.Header = 'Andere Version / Vorversion installieren ...'; $miVer.Add_Click({ Show-NEMVersionPicker })
+$miSet = New-Object System.Windows.Controls.MenuItem; $miSet.Header = 'Update-Einstellungen (Kanal Stabil/Test, Signatur) ...'
+$miSet.Add_Click({ try { $script:tabMain.SelectedItem = $script:tabSettings; if ($script:grpToolUpdate) { $script:grpToolUpdate.BringIntoView() } } catch {} })
+$miChk = New-Object System.Windows.Controls.MenuItem; $miChk.Header = 'Jetzt nach Updates suchen'; $miChk.Add_Click({ Invoke-UpdateCheck })
+$script:miSignSep = New-Object System.Windows.Controls.Separator
+$script:miSign = New-Object System.Windows.Controls.MenuItem; $script:miSign.Header = 'Release signieren (Herausgeber) ...'; $script:miSign.Add_Click({ Start-NEMReleaseSigning })
+$script:miPub  = New-Object System.Windows.Controls.MenuItem; $script:miPub.Header = 'Release freigeben (Herausgeber) ...'; $script:miPub.Add_Click({ Start-NEMReleasePublish })
+foreach ($m in @($miVer, $miChk, $miSet, $script:miSignSep, $script:miSign, $script:miPub)) { [void]$cmUpd.Items.Add($m) }
+# Herausgeber-Eintraege nur zeigen, wenn auf diesem PC der private Schluessel des Signatur-Zertifikats liegt
+$cmUpd.Add_Opened({ $v = $(if (Test-NEMCanSign) { 'Visible' } else { 'Collapsed' }); $script:miSign.Visibility = $v; $script:miPub.Visibility = $v; $script:miSignSep.Visibility = $v })
+$script:btnUpdate.ContextMenu = $cmUpd
+$script:btnUpdate.ToolTip = 'Linksklick: Update installieren / erneut pruefen. Rechtsklick: andere Version, Update-Einstellungen'
+
+# --- Settings > Tool-Update
+$script:tabSettings      = Get-UI 'tabSettings'
+$script:grpToolUpdate    = Get-UI 'grpToolUpdate'
+$script:cmbUpdChannel    = Get-UI 'cmbUpdChannel'
+$script:chkUpdRequireSig = Get-UI 'chkUpdRequireSig'
+$script:txtUpdSigner     = Get-UI 'txtUpdSigner'
+$script:btnUpdSave       = Get-UI 'btnUpdSave'
+$script:lblUpdInfo       = Get-UI 'lblUpdInfo'
+$script:lblDashUpdInfo   = Get-UI 'lblDashUpdInfo'
+$script:UpdUiLoading     = $false
+
+function Import-NEMUpdateSettingsUI {
+    $script:UpdUiLoading = $true
+    try {
+        $uc = Get-HMUpdateConfig $script:RootPath
+        $script:cmbUpdChannel.SelectedIndex = $(if ($uc.Channel -eq 'Test') { 1 } else { 0 })
+        $script:chkUpdRequireSig.IsChecked = (-not $uc.AllowUnsigned)
+        $script:txtUpdSigner.Text = $(if ($uc.SignerThumbprint) { $uc.SignerThumbprint } else { Get-HMDefaultSigner $uc.Owner $uc.Repo })
+        Update-NEMUpdateInfo
+    } finally { $script:UpdUiLoading = $false }
+}
+$script:chkUpdRequireSig.Add_Unchecked({
+    if ($script:UpdUiLoading) { return }
+    $a = [System.Windows.MessageBox]::Show(
+        "Signaturpflicht wirklich ausschalten?`n`nDann werden auch Releases ohne gueltige Signatur des Herausgebers installiert. Ein missbrauchtes GitHub-Konto oder ein gestohlener Token koennte so manipulierte Versionen verteilen.`n`nNur fuer Tests oder eine eigene Update-Quelle ausschalten.",
+        'Nur signierte Updates', 'YesNo', 'Warning')
+    if ($a -ne 'Yes') { $script:UpdUiLoading = $true; $script:chkUpdRequireSig.IsChecked = $true; $script:UpdUiLoading = $false }
+})
+$script:btnUpdSave.Add_Click({
+    try {
+        $f = Join-Path $script:RootPath 'update.json'
+        $o = [ordered]@{}
+        if (Test-Path -LiteralPath $f) {
+            try { $u = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($p in $u.PSObject.Properties) { $o[$p.Name] = $p.Value } } catch {}
+        }
+        $o.Remove('RequireSignature')   # altes Feld - wird ignoriert, nicht mehr schreiben
+        $o['Channel'] = $(if ($script:cmbUpdChannel.SelectedIndex -eq 1) { 'Test' } else { 'Stable' })
+        $o['AllowUnsigned'] = (-not [bool]$script:chkUpdRequireSig.IsChecked)
+        if ($o['AllowUnsigned']) { $o['UseBranch'] = $(if ($o.Contains('UseBranch')) { $o['UseBranch'] } else { $false }) } else { $o.Remove('UseBranch') }
+        $tp = ("$($script:txtUpdSigner.Text)" -replace '[^0-9A-Fa-f]', '').ToUpper()
+        if ($tp -and $tp.Length -ne 40) { [System.Windows.MessageBox]::Show('Der Fingerabdruck muss 40 Hex-Zeichen haben (SHA1-Thumbprint).', 'Tool-Update', 'OK', 'Warning') | Out-Null; return }
+        $own = $(if ($o.Contains('Owner') -and "$($o['Owner'])") { "$($o['Owner'])" } else { 'ChiliApple' })
+        $rep = $(if ($o.Contains('Repo') -and "$($o['Repo'])") { "$($o['Repo'])" } else { 'HU-NextExam-Manager' })
+        # eingebauten Fingerabdruck NICHT speichern (sonst kein spaeterer Wechsel per Update moeglich)
+        if (-not $tp -or $tp -eq (Get-HMDefaultSigner $own $rep)) { $o.Remove('SignerThumbprint') } else { $o['SignerThumbprint'] = $tp }
+        ([pscustomobject]$o) | ConvertTo-Json | Set-Content -LiteralPath $f -Encoding UTF8
+        Write-Log -Message "Update-Einstellungen gespeichert: Kanal $($o['Channel']), AllowUnsigned=$($o['AllowUnsigned'])" -Level INFO -Source 'Update'
+        Import-NEMUpdateSettingsUI
+        Set-Status 'Update-Einstellungen gespeichert'
+        Invoke-UpdateCheck
+    } catch {
+        [System.Windows.MessageBox]::Show("Speichern fehlgeschlagen:`n$_", 'Tool-Update', 'OK', 'Error') | Out-Null
+    }
+})
+
+# --- Anleitung (Knopf "Anleitung" / F1): immer aktuell aus dem Repo (passend zur installierten Version), sonst lokale Kopie
+$script:btnHelp = Get-UI 'btnHelp'
+function Show-NEMManual {
+    $script:ManualLocal = Join-Path $script:RootPath 'Docs\Anleitung.html'
+    $alt = Join-Path ([Environment]::GetFolderPath('CommonDocuments')) 'HU-NextExam-Manager_Anleitung.html'
+    $cfg = Get-HMUpdateConfig $script:RootPath
+    $ref = $(if ($cfg.UseBranch) { $cfg.Branch } else { "v$($script:ToolVersion)" })
+    Set-Status 'Anleitung wird geladen ...'
+    Start-NEMJob -Name 'Manual' -TimeoutSec 30 -ArgumentList @($cfg.Owner, $cfg.Repo, $ref, @($script:ManualLocal, $alt)) -Work {
+        param($owner, $repo, $ref, $targets)
+        $dl = Join-Path $env:TEMP ('HUNEM_Anleitung_{0}.html' -f [guid]::NewGuid().ToString('N'))
+        try {
+            try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+            Invoke-WebRequest "https://raw.githubusercontent.com/$owner/$repo/$ref/Docs/Anleitung.html" -Headers @{ 'User-Agent' = 'HU-NextExam-Manager' } -UseBasicParsing -TimeoutSec 20 -OutFile $dl -ErrorAction Stop
+            if ((Get-Item -LiteralPath $dl).Length -lt 1000) { return 'ERR:Datei leer' }
+            $why = ''
+            foreach ($t in @($targets)) {
+                try {
+                    $d = Split-Path $t
+                    if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force -ErrorAction Stop | Out-Null }
+                    Copy-Item -LiteralPath $dl -Destination $t -Force -ErrorAction Stop
+                    return "OK:$t"
+                } catch { $why = $_.Exception.Message }
+            }
+            return "ERR:nicht speicherbar ($why)"
+        } catch { return "ERR:$($_.Exception.Message)" }
+        finally { Remove-Item -LiteralPath $dl -Force -ErrorAction SilentlyContinue }
+    } -OnDone {
+        param($r)
+        $f = $null
+        if ("$r" -match '^OK:(.+)$') { $f = $Matches[1]; Set-Status 'Anleitung geoeffnet (aktuelle Fassung von GitHub)' }
+        elseif (Test-Path -LiteralPath $script:ManualLocal) { $f = $script:ManualLocal; Set-Status "Aktuelle Anleitung nicht ladbar ($("$r" -replace '^ERR:', '')) - lokale Anleitung geoeffnet" }
+        else { Set-Status "Anleitung nicht verfuegbar: $("$r" -replace '^ERR:', '')"; return }
+        # ueber den Explorer oeffnen: Browser startet im Kontext des angemeldeten Benutzers (nicht erhoeht)
+        try { Start-Process -FilePath explorer.exe -ArgumentList "`"$f`"" } catch { Set-Status "Anleitung konnte nicht geoeffnet werden: $($_.Exception.Message)" }
+    }
+}
+$script:btnHelp.Add_Click({ Show-NEMManual })
+$script:Window.Add_PreviewKeyDown({ param($s, $e) if ("$($e.Key)" -eq 'F1') { $e.Handled = $true; Show-NEMManual } })
 
 # --- Window-Geometrie aus Config anwenden (vor ShowDialog) ---
 try {
@@ -3308,6 +3696,7 @@ $script:Window.Add_Loaded({
                     "Admin-Rechte empfohlen", 'OK', 'Warning') | Out-Null
             }
         } catch {}
+        try { Import-NEMUpdateSettingsUI } catch { Write-Log -Message "Update-Settings: $_" -Level WARN -Source 'Update' }
         # Update-Check (schnell) + Log-View - async
         $script:Window.Dispatcher.BeginInvoke([Action]{
             try { Update-LogView } catch {}

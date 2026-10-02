@@ -1,5 +1,47 @@
 # Changelog
 
+## v3.2.0 (2026-10-02)
+
+### Sicherheit - signierte Updates (wie HUMig v2.0.55+)
+- **Updates nur noch aus GitHub-Releases** statt vom Branch `main`. Kanal *Stabil*
+  (freigegebene Releases, Standard) oder *Test* (auch Vorab-Releases).
+- **Pruefsumme + Signatur:** Die CI haengt an jedes Release
+  `HU-NextExam-Manager-files.sha256` (SHA256 aller Dateien). Der Herausgeber signiert
+  diese Datei (PKCS#7/CMS, abgetrennt) -> `HU-NextExam-Manager-files.sha256.p7s`.
+  Jeder Client prueft offline Signatur + eingebauten Fingerabdruck
+  (`1B669AE240DA1A91043C4576763D9F8E0BF762FA`, gleiches Zertifikat wie HUMig).
+  Unsignierte Releases werden weder angeboten noch installiert.
+- **Pull.ps1 neu:** laedt erst ALLE Dateien als `*.pulltmp`, prueft jeden SHA256 und
+  ersetzt erst dann; bei einem Fehler bleibt alles unveraendert. Schreibt `installed.json`
+  (Version, Kanal, Pruefung). Parameter `-Version`, `-Channel`, `-WaitPid`, `-NoStart`,
+  `-NonInteractive`. Startet das Tool nach einem Update aus dem Tool heraus neu.
+- **Neues Modul `Modules/Update.psm1`** (Bereich `HMUpdateLib` identisch mit Pull.ps1).
+- **Update-Knopf:** Update-Check im Hintergrund gegen die Releases (kein CDN-Cache-Problem
+  mehr). Rechtsklick: *Andere Version / Vorversion installieren* (Liste mit Spalte
+  *Signatur*), *Jetzt nach Updates suchen*, *Update-Einstellungen*; auf dem PC mit dem
+  Signatur-Schluessel zusaetzlich *Release signieren* und *Release freigeben*
+  (Freigabe verweigert ohne gueltige Signatur).
+- **Settings > Tool-Update:** Kanal, "Nur signierte Updates annehmen (empfohlen)"
+  (Abhaken nur nach Warnung, gespeichert als `AllowUnsigned` in `update.json`),
+  Fingerabdruck. Der eingebaute Fingerabdruck wird nicht in `update.json` geschrieben.
+- **Dashboard > Tool:** zeigt Kanal und Pruefnachweis der Installation.
+- **CI (GitHub Actions):** Syntax, XAML/Steuerelemente, Update-Bibliothek identisch,
+  PSScriptAnalyzer, Pester; bei Releases Pruefsummen-Datei + Test des Update-Wegs.
+- **Tools/Sign-NextExamRelease.ps1:** Signieren/Freigeben per Kommandozeile.
+
+### Neu
+- **Anleitung** (`Docs/Anleitung.html`) mit Knopf *Anleitung* oben rechts bzw. `F1` -
+  wird immer aktuell von GitHub geladen (passend zur installierten Version).
+
+### Lizenz
+- **Nutzungslizenz statt MIT** (wie HUMig): kostenlos benutzen und in der eigenen
+  Organisation kopieren, aber nicht veraendern/weitergeben/verkaufen. Versionen bis 3.1.5
+  bleiben unter MIT.
+
+### Hinweis Umstieg
+- Die erste Aktualisierung von v3.1.x laeuft noch ueber den alten Pull-Weg (ungeprueft).
+  Ab v3.2.0 gilt die Signaturpruefung.
+
 ## v3.1.5 (2026-09-30)
 
 ### Geaendert

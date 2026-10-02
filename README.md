@@ -1,6 +1,7 @@
 # HU-NextExam-Manager <img src="Assets/crane_check_icon.png" alt="Logo" width="48" align="top"/>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Lizenz: Nutzung frei](https://img.shields.io/badge/Lizenz-Nutzung%20frei-orange.svg)](LICENSE)
+[![CI](https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml)
 [![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/windows)
 [![Release](https://img.shields.io/github/v/release/ChiliApple/HU-NextExam-Manager)](https://github.com/ChiliApple/HU-NextExam-Manager/releases)
@@ -72,18 +73,35 @@ Invoke-WebRequest "https://raw.githubusercontent.com/ChiliApple/HU-NextExam-Mana
 cd $d; .\Pull.ps1
 ```
 
-> **Hinweis:** Downloads laufen über `raw.githubusercontent.com` (kein API-Rate-Limit).
-> Nur das Tree-Listing braucht 2 API-Calls pro Pull.
+> **Hinweis:** `Pull.ps1` lädt das neueste **signierte** Release (Kanal Stabil) und prüft
+> jede Datei per SHA256 und die Signatur des Herausgebers, bevor etwas ersetzt wird.
+> Downloads laufen über `raw.githubusercontent.com` beim Commit des Releases.
 
 ### Starten
 
 Doppelklick auf **Start.vbs** - triggert UAC-Prompt (Tool braucht Admin für GPO),
 läuft dann fensterlos und das Tool-Fenster kommt nach ~3 Sekunden.
 
-### Update
+### Update (signierte Releases)
 
-Im Tool: **Gold-Update-Button** oben rechts, wenn neue Version verfügbar.
-Oder manuell `.\Pull.ps1` ausführen (Tool vorher schliessen).
+Im Tool: **Gold-Update-Button** oben rechts, wenn im eingestellten Kanal eine neuere,
+**signierte** Version verfügbar ist. Klick → Tool schliesst, `Pull.ps1` lädt, prüft
+und startet das Tool neu. Oder manuell `.\Pull.ps1` ausführen (Tool vorher schliessen).
+
+- Updates kommen ab v3.2.0 nur noch aus **GitHub-Releases**: Kanal *Stabil* = freigegebene
+  Releases, Kanal *Test* = auch Vorab-Releases.
+- Jedes Release hat `HU-NextExam-Manager-files.sha256` (SHA256 aller Dateien, von der CI erstellt)
+  und `HU-NextExam-Manager-files.sha256.p7s` (PKCS#7-Signatur des Herausgebers,
+  Zertifikat-Fingerabdruck `1B669AE240DA1A91043C4576763D9F8E0BF762FA` ist eingebaut).
+  Ohne gültige Signatur wird ein Release weder angeboten noch installiert.
+- Erst werden **alle** Dateien geladen und geprüft, dann ersetzt – bei einer Abweichung bleibt alles unverändert.
+- **Rechtsklick auf Update:** andere Version / Vorversion, Update-Einstellungen
+  (Settings › Tool-Update: Kanal, „Nur signierte Updates annehmen“), auf dem PC des
+  Herausgebers zusätzlich *Release signieren* / *Release freigeben*.
+- Kommandozeile für den Herausgeber: `Tools\Sign-NextExamRelease.ps1`.
+
+**Anleitung:** Knopf **Anleitung** oben rechts (oder `F1`) – lädt `Docs/Anleitung.html`
+immer aktuell von GitHub.
 
 ---
 
@@ -274,7 +292,11 @@ Im **Dashboard** siehst du alle Clients eines Tasks mit Status.
 ```
 HU-NextExam-Manager/
 ├── HU-NextExam-Manager.ps1  # Main (WPF-UI, PS 5.1)
-├── Pull.ps1                 # Self-Update / Bootstrap
+├── Pull.ps1                 # Self-Update / Bootstrap (signierte Releases)
+├── LICENSE                  # Nutzungslizenz
+├── Tools/
+│   └── Sign-NextExamRelease.ps1  # Release signieren/freigeben (Herausgeber)
+├── .github/                 # CI: Tests, Pruefsummen-Datei fuer Releases
 ├── Start.vbs                # Fensterloser Launcher (mit UAC-Elevation)
 ├── README.md                # Diese Datei
 ├── Assets/
@@ -282,11 +304,11 @@ HU-NextExam-Manager/
 │   ├── icon.png
 │   └── crane_check_icon.png
 ├── Docs/
+│   ├── Anleitung.html       # Benutzer-Anleitung (Knopf "Anleitung" / F1)
 │   ├── INSTALL.md
 │   ├── MDM-Setup.md
 │   ├── CHANGELOG.md
 │   ├── NOTICE.md
-│   ├── LICENSE
 │   └── config.json.example
 ├── Modules/
 │   ├── Config.psm1
@@ -296,6 +318,7 @@ HU-NextExam-Manager/
 │   ├── WMIFilter.psm1
 │   ├── GPOSetup.psm1
 │   ├── AutoPull.psm1
+│   ├── Update.psm1          # Tool-Update: Releases, SHA256, Signatur
 │   └── ClientStatus.psm1
 ├── Templates/
 │   └── Startup-NextExam.ps1  # Client-Startup-Script (via GPO deployed)
@@ -324,3 +347,11 @@ programmatisch geschriebenen `scripts.ini` / `psscripts.ini` nicht als gültig.
 7. Einfach **OK** klicken (nichts ändern, nur bestätigen)
 8. Editor schliessen
 9. Für **beide** Install-GPOs wiederholen (Student + Teacher)
+
+---
+
+## Lizenz
+
+Nutzungslizenz ab v3.2.0 (kostenlos benutzen, nicht verändern/weitergeben) – siehe [LICENSE](LICENSE).
+Versionen bis 3.1.5 wurden unter der MIT-Lizenz veröffentlicht.
+Next-Exam-Hinweise: [Docs/NOTICE.md](Docs/NOTICE.md).

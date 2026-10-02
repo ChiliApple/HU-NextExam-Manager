@@ -1,21 +1,52 @@
-MIT License
+HU-NextExam-Manager - Nutzungslizenz
 
-Copyright (c) 2026 HU-NextExam-Manager Contributors
+Copyright (c) 2026 Die Urheber von HU-NextExam-Manager. Alle Rechte vorbehalten.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Gilt ab Version 3.2.0. Fruehere Versionen wurden unter der MIT-Lizenz
+veroeffentlicht; fuer diese bereits veroeffentlichten Fassungen gilt weiterhin
+die damalige Lizenz.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Erlaubte Nutzung
+   Die Software "HU-NextExam-Manager" (Programmcode, Oberflaeche, Dokumentation,
+   Grafiken) darf kostenlos heruntergeladen, installiert und ausgefuehrt werden -
+   von Privatpersonen, Schulen, Behoerden, Vereinen und Unternehmen. Kopien fuer
+   den eigenen Einsatz (z.B. auf Servern oder Freigaben der eigenen
+   Organisation) sind erlaubt.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Eigene Einstellungen
+   Das Anpassen der Konfigurationsdateien im Tool-Ordner (z.B. config.json,
+   update.json) ueber das Programm oder einen Editor ist ausdruecklich erlaubt.
+   Ebenso die Gruppenrichtlinien, Freigaben und Intune-Apps, die das Programm
+   in der eigenen Umgebung anlegt.
+
+3. Nicht erlaubt (ohne vorherige schriftliche Zustimmung der Urheber)
+   a) den Programmcode oder die Dokumentation zu veraendern, zu bearbeiten,
+      zu uebersetzen oder Teile davon in andere Software zu uebernehmen,
+   b) veraenderte Fassungen zu verwenden oder weiterzugeben,
+   c) die Software zu verkaufen, zu vermieten oder gegen Entgelt als Teil
+      eines Produkts oder einer Dienstleistung anzubieten,
+   d) die Software ausserhalb des offiziellen Repositorys zu veroeffentlichen
+      (Weitergabe innerhalb der eigenen Organisation ist erlaubt),
+   e) Urheber-, Lizenz- oder Versionshinweise zu entfernen oder zu aendern.
+
+4. GitHub
+   Das Ansehen und Forken des Repositorys im Rahmen der Nutzungsbedingungen
+   von GitHub bleibt unberuehrt. Ein Fork berechtigt nicht zu den unter
+   Punkt 3 genannten Handlungen.
+
+5. Next-Exam
+   "Next-Exam" ist Software des Bildungsportals bzw. des jeweiligen
+   Rechtsinhabers. HU-NextExam-Manager ist ein inoffizielles Hilfsmittel und
+   verteilt nur die offiziell veroeffentlichten, unveraenderten Installer.
+   Fuer Next-Exam selbst gelten dessen Lizenzbedingungen (siehe Docs/NOTICE.md).
+
+6. Gewaehrleistung und Haftung
+   Die Software wird "wie besehen" ohne jede Gewaehrleistung bereitgestellt.
+   Die Urheber haften - soweit gesetzlich zulaessig - nicht fuer Schaeden,
+   Datenverlust oder Folgeschaeden aus der Nutzung. Gruppenrichtlinien und
+   Intune-Zuweisungen sind vor dem Ausrollen in einer Testumgebung bzw. an
+   einer Test-OU/-Gruppe zu pruefen.
+
+7. Schlussbestimmungen
+   Es gilt oesterreichisches Recht. Ist eine Bestimmung unwirksam, bleiben
+   die uebrigen Bestimmungen gueltig.

@@ -19,7 +19,7 @@ und Nutzungsrechte-Hinweise.
   - Client Credentials Flow + Auth Code Flow mit PKCE
   - Chunked Azure Blob Upload, Win32 App CRUD, Gruppen-Zuweisungen
 - **Auto-Pull:** Scheduled Task für tägliche MSI-Updates (SYSTEM oder User)
-- **Self-Update:** Tool aktualisiert sich via Pull.ps1 aus dem Repo
+- **Self-Update:** Tool aktualisiert sich via Pull.ps1 aus signierten GitHub-Releases (SHA256 + Signatur)
 - **Dashboard + Log-Viewer** für Einsatzbereit-Ampel und Troubleshooting
 
 ## Anforderungen
@@ -35,6 +35,6 @@ Siehe `Docs/INSTALL.md` oder die Hauptdokumentation in `README.md`.
 
 ## Lizenz
 
-MIT License - siehe `LICENSE`.
+Nutzungslizenz (ab v3.2.0) - siehe `LICENSE`.
 
 Third-Party Notices + Next-Exam Trademark-Hinweise - siehe `Docs/NOTICE.md`.

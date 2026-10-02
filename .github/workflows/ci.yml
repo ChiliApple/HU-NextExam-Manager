@@ -1,0 +1,74 @@
+# Automatische Tests fuer HU-NextExam-Manager (Windows PowerShell 5.1) und Pruefsummen-Datei fuer Releases.
+# - bei jedem Push/Pull-Request: Pruefungen (Syntax, XAML, Steuerelemente, Update-Bibliothek, PSScriptAnalyzer, Pester)
+# - bei einem neuen Release: zusaetzlich HU-NextExam-Manager-files.sha256 erstellen und an das Release haengen
+#   (nur wenn die Pruefungen bestanden sind) und den Update-Weg testen (Pull.ps1 laedt genau dieses Release und prueft alle Pruefsummen)
+# - Signatur: haengt der Herausgeber danach an (Tool: Rechtsklick auf Update > Release signieren), erst dann wird das Release angeboten
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Pruefungen (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
+      - name: Pruefungen
+        shell: powershell
+        run: .\.github\tests\Invoke-CITests.ps1
+
+  manifest:
+    name: Pruefsummen-Datei zum Release
+    if: github.event_name == 'release'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: HU-NextExam-Manager-files.sha256 erstellen
+        run: python3 .github/scripts/manifest.py HU-NextExam-Manager-files.sha256
+      - name: An das Release haengen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" HU-NextExam-Manager-files.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+
+  pull:
+    name: Update-Weg testen (Pull.ps1)
+    if: github.event_name == 'release'
+    needs: manifest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - name: Pull.ps1 laedt das Release und prueft alle Pruefsummen
+        shell: powershell
+        env:
+          HUNEM_GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $t = Join-Path $env:RUNNER_TEMP 'HU-NextExam-Manager'
+          $v = $env:TAG -replace '^v', ''
+          # Die Signatur haengt der Herausgeber erst nach diesem Test an - hier wird der Weg mit Pruefsumme getestet
+          New-Item -ItemType Directory -Path $t -Force | Out-Null
+          '{ "AllowUnsigned": true }' | Set-Content -LiteralPath (Join-Path $t 'update.json') -Encoding UTF8
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\Pull.ps1 -Target $t -Version $v -NoStart -NonInteractive -Owner $env:GITHUB_REPOSITORY_OWNER -Repo ($env:GITHUB_REPOSITORY -split '/')[1]
+          if ($LASTEXITCODE -ne 0) { throw "Pull.ps1 Exitcode $LASTEXITCODE" }
+          $i = Get-Content (Join-Path $t 'installed.json') -Raw | ConvertFrom-Json
+          if ("$($i.Version)" -ne $v) { throw "installiert: $($i.Version), erwartet $v" }
+          if ("$($i.Check)" -notlike 'Pruefsumme*') { throw "nicht geprueft: $($i.Check)" }
+          if (-not (Test-Path (Join-Path $t 'Modules\Update.psm1'))) { throw 'Modules\Update.psm1 fehlt nach Pull' }
+          "Pull OK: $($i.Version) - $($i.Check) - $($i.Files) Dateien"

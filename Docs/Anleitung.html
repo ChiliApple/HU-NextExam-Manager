@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HU-NextExam-Manager – Anleitung</title>
+<style>
+:root{
+  --bg:#eff1f5;--panel:#ffffff;--panel2:#e6e9ef;--text:#4c4f69;--sub:#6c6f85;--line:#ccd0da;
+  --blue:#1e66f5;--green:#40a02b;--peach:#fe640b;--red:#d20f39;--mauve:#8839ef;--teal:#179299;--yellow:#df8e1d;
+  --accent:#b9a88a;--shadow:0 2px 10px rgba(76,79,105,.08);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11111b;--panel:#1e1e2e;--panel2:#181825;--text:#cdd6f4;--sub:#a6adc8;--line:#313244;
+  --blue:#89b4fa;--green:#a6e3a1;--peach:#fab387;--red:#f38ba8;--mauve:#cba6f7;--teal:#94e2d5;--yellow:#f9e2af;--shadow:0 2px 12px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --bg:#11111b;--panel:#1e1e2e;--panel2:#181825;--text:#cdd6f4;--sub:#a6adc8;--line:#313244;
+  --blue:#89b4fa;--green:#a6e3a1;--peach:#fab387;--red:#f38ba8;--mauve:#cba6f7;--teal:#94e2d5;--yellow:#f9e2af;--shadow:0 2px 12px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:84px}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--panel);border-bottom:2px solid var(--accent);box-shadow:var(--shadow)}
+header img{width:44px;height:44px}
+header .t{font-size:22px;font-weight:700;line-height:1.1}
+header .s{font-size:12px;color:var(--sub)}
+header .sp{flex:1}
+#q{width:260px;max-width:40vw;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font:inherit}
+.tbtn{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font:inherit}
+.wrap{display:grid;grid-template-columns:270px 1fr;max-width:1400px;margin:0 auto}
+nav{position:sticky;top:66px;align-self:start;height:calc(100vh - 66px);overflow:auto;padding:18px 10px 40px 18px;border-right:1px solid var(--line)}
+nav a{display:block;padding:4px 10px;border-radius:6px;color:var(--text);font-size:14px}
+nav a:hover{background:var(--panel2);text-decoration:none}
+nav a.l2{padding-left:24px;font-size:13px;color:var(--sub)}
+nav a.act{background:var(--panel2);color:var(--blue);font-weight:600}
+main{padding:24px 36px 80px;min-width:0}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 28px;margin:0 0 22px;box-shadow:var(--shadow)}
+h1{font-size:28px;margin:0 0 6px}
+h2{font-size:22px;margin:0 0 12px}
+h2 .n{display:inline-grid;place-items:center;width:32px;height:32px;margin-right:10px;vertical-align:2px;border-radius:50%;background:var(--accent);color:#1e1e2e;font-size:15px}
+h3{font-size:17px;margin:22px 0 8px;color:var(--blue)}
+p{margin:8px 0}
+.lead{color:var(--sub);font-size:16px}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{background:var(--panel2);font-weight:600}
+tr:hover td{background:color-mix(in srgb,var(--panel2) 55%,transparent)}
+.ui{display:inline-block;padding:0 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:13px;font-weight:600;white-space:nowrap}
+.ui.g{border-color:var(--green);color:var(--green)}.ui.r{border-color:var(--red);color:var(--red)}.ui.b{border-color:var(--blue);color:var(--blue)}
+.ui.p{border-color:var(--peach);color:var(--peach)}.ui.m{border-color:var(--mauve);color:var(--mauve)}.ui.t{border-color:var(--teal);color:var(--teal)}
+kbd{padding:1px 7px;border-radius:5px;border:1px solid var(--line);border-bottom-width:2px;background:var(--panel2);font:12px Consolas,monospace}
+code{font:13px Consolas,monospace;background:var(--panel2);padding:1px 5px;border-radius:4px}
+pre{font:13px/1.5 Consolas,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;overflow:auto;margin:10px 0}
+.note{border-left:4px solid var(--blue);background:var(--panel2);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.note.tip{border-color:var(--green)}.note.warn{border-color:var(--peach)}.note.stop{border-color:var(--red)}
+.note b.h{display:block;margin-bottom:2px}
+.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0}
+.steps>li{counter-increment:s;position:relative;padding:4px 0 10px 46px;min-height:36px}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:2px;width:32px;height:32px;border-radius:50%;background:var(--blue);color:var(--panel);display:grid;place-items:center;font-weight:700}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin:12px 0}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card b{display:block;margin-bottom:4px}
+.card.g{border-top:4px solid var(--green)}.card.b{border-top:4px solid var(--blue)}.card.p{border-top:4px solid var(--peach)}.card.m{border-top:4px solid var(--mauve)}.card.t{border-top:4px solid var(--teal)}.card.r{border-top:4px solid var(--red)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0}
+.flow span{padding:8px 14px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);font-weight:600;font-size:14px}
+.flow i{color:var(--sub);font-style:normal}
+.hide{display:none!important}
+figure{margin:14px 0}figure img{max-width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:var(--shadow);cursor:zoom-in}figure figcaption{color:var(--sub);font-size:13px;margin-top:4px}
+mark{background:var(--yellow);color:#1e1e2e;border-radius:3px}
+footer{color:var(--sub);font-size:12px;text-align:center;padding:10px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}nav{display:none}main{padding:16px}section{padding:18px 16px}#q{width:150px}}
+@media print{header,nav,#q,.tbtn{display:none!important}.wrap{display:block}section{box-shadow:none;break-inside:avoid-page}body{background:#fff;color:#000}}
+</style>
+</head>
+<body>
+<header>
+  <img src="../Assets/icon.png" alt="" onerror="this.style.display='none'">
+  <div><div class="t">HU-NextExam-Manager</div><div class="s">Next-Exam-Verteilung per GPO und Intune · Anleitung</div></div>
+  <div class="sp"></div>
+  <input id="q" type="search" placeholder="Suchen … (z. B. WMI, Signatur)">
+  <button class="tbtn" id="theme" title="Hell / Dunkel">◐</button>
+  <button class="tbtn" onclick="window.print()" title="Drucken / PDF">⎙</button>
+</header>
+<div class="wrap">
+<nav id="toc"></nav>
+<main>
+
+<section id="start">
+  <h1>Willkommen beim HU-NextExam-Manager</h1>
+  <p class="lead">Der HU-NextExam-Manager (WPF, PowerShell 5.1) verteilt die Prüfungssoftware <b>Next-Exam</b> automatisch – per Gruppenrichtlinie in Active-Directory-Umgebungen und per Intune (Microsoft Graph) auf MDM-verwaltete Geräte. Einmal eingerichtet, holt er neue Versionen täglich selbst.</p>
+  <div class="note tip"><b class="h">Diese Anleitung passt zur installierten Version</b>Der Knopf <span class="ui">Anleitung</span> (oder <kbd>F1</kbd>) lädt sie jedes Mal aktuell von GitHub – in der Fassung der installierten Version. Ohne Internet öffnet sich die mitgelieferte Kopie <code>Docs\Anleitung.html</code>.</div>
+</section>
+
+<section id="ueberblick">
+  <h2><span class="n">1</span>Überblick und Ablauf</h2>
+  <p>Ohne Tool braucht jede Next-Exam-Version Handarbeit: MSI herunterladen, auf Shares kopieren, GPOs pflegen, Firewall-Regeln setzen, WMI-Filter anlegen. Der Manager erledigt das in einem Durchgang.</p>
+  <div class="flow"><span>1 · Task anlegen (Settings)</span><i>→</i><span>2 · MSI Pull</span><i>→</i><span>3 · GPO Setup</span><i>→</i><span>4 · Clients installieren selbst</span><i>→</i><span>5 · Status im Dashboard</span></div>
+  <div class="cards">
+    <div class="card g"><b>MSI Pull</b>Student- und Teacher-MSI vom offiziellen Next-Exam-Release auf GitHub, Ablage auf UNC-Shares, alte Versionen ins Archiv</div>
+    <div class="card b"><b>GPO Setup</b>Install-GPOs (geplanter Task auf den Clients), Firewall-GPOs, WMI-Filter, Verknüpfung mit der OU</div>
+    <div class="card p"><b>AutoPull</b>Geplanter Task am Server, holt neue Versionen täglich ohne Zutun</div>
+    <div class="card m"><b>MDM Pull (Intune)</b>Win32-App für Geräteinitiative-Notebooks (Autopilot/Intune, ohne Domänenbeitritt)</div>
+    <div class="card t"><b>Clients-Status</b>Clients melden über einen Status-Share, welche Version installiert ist</div>
+    <div class="card r"><b>Tool-Update</b>nur signierte GitHub-Releases, Kanal Stabil oder Test</div>
+  </div>
+  <h3>Die Reiter</h3>
+  <table>
+    <tr><th style="width:230px">Reiter</th><th>Inhalt</th></tr>
+    <tr><td><span class="ui">Dashboard</span></td><td>Tool-Info, aktuelles Next-Exam-Release, MDM-Status, Clients je Task und Ampel je Task – siehe <a href="#dashboard">Dashboard</a>.</td></tr>
+    <tr><td><span class="ui">MSI Pull</span></td><td>Release abfragen, MSIs auf die Shares verteilen, Auto-Pull – siehe <a href="#msipull">MSI Pull</a> und <a href="#autopull">AutoPull</a>.</td></tr>
+    <tr><td><span class="ui">MDM Pull</span></td><td>Intune-Deployment – siehe <a href="#mdm">MDM/Intune</a>.</td></tr>
+    <tr><td><span class="ui">GPO Setup</span></td><td>GPOs anlegen, verknüpfen, entfernen – siehe <a href="#gpo">GPO Setup</a>.</td></tr>
+    <tr><td><span class="ui">Settings</span></td><td>Tasks, MDM-Tenants, Desktop-Verknüpfung, Tool-Update – siehe <a href="#settings">Settings</a>.</td></tr>
+    <tr><td><span class="ui">Log-Viewer</span></td><td>Protokoll des Tools – siehe <a href="#log">Log-Viewer</a>.</td></tr>
+  </table>
+  <p>Oben rechts sitzen die Knöpfe <span class="ui">Update</span> (siehe <a href="#update">Tool-Update</a>) und <span class="ui">Anleitung</span>; unten zeigt die Statusleiste, woran das Tool gerade arbeitet. Beim Start erscheint kurz <i>Initialisierung …</i> – je nach Netzwerk/AD kann das bis ca. 40 Sekunden dauern.</p>
+</section>
+
+<section id="installation">
+  <h2><span class="n">2</span>Installation und Start</h2>
+  <h3 id="voraussetzungen">Voraussetzungen</h3>
+  <table>
+    <tr><th style="width:230px">Für</th><th>Benötigt</th></tr>
+    <tr><td><b>GPO-Verteilung</b></td><td>Windows Server 2016+ oder Client mit RSAT · PowerShell 5.1 · Module <code>GroupPolicy</code>, <code>ActiveDirectory</code>, <code>NetSecurity</code>, <code>ScheduledTasks</code> · Domänen-Admin oder delegierte Rechte zum Anlegen und Verknüpfen von GPOs (Richtlinien-Ersteller-Besitzer) für die Ziel-OUs</td></tr>
+    <tr><td><b>MDM/Intune</b> (zusätzlich)</td><td>Microsoft-365-Tenant mit Intune-Lizenz · Globaler Administrator oder Intune-Administrator (für App-Registrierung und Admin-Consent) · Intune-verwaltete Geräte · Internetzugang vom Admin-PC (Graph API, Azure-Blob-Upload)</td></tr>
+  </table>
+  <h3 id="bootstrap">Erstinstallation mit Pull.ps1</h3>
+  <ol class="steps">
+    <li>PowerShell <b>als Administrator</b> öffnen (nicht die ISE – WPF-Fenster stürzen dort ab).</li>
+    <li><code>Pull.ps1</code> in den gewünschten Ordner laden und ausführen. Für mehrere Admins auf einem Server empfiehlt sich <code>C:\Tools\HU-NextExam-Manager</code>:
+<pre>$d = 'C:\Tools\HU-NextExam-Manager'
+New-Item -ItemType Directory -Path $d -Force | Out-Null
+Invoke-WebRequest "https://raw.githubusercontent.com/ChiliApple/HU-NextExam-Manager/main/Pull.ps1" `
+    -UseBasicParsing -OutFile (Join-Path $d 'Pull.ps1')
+cd $d; .\Pull.ps1</pre></li>
+    <li>Pull.ps1 lädt die aktuelle Version, prüft sie (siehe <a href="#update">Prüfsumme und Signatur</a>) und legt alle Dateien in den Ordner.</li>
+  </ol>
+  <table>
+    <tr><th style="width:230px">Zielordner</th><th>Regel</th></tr>
+    <tr><td><code>-Target &lt;Pfad&gt;</code></td><td>gewinnt immer, z. B. <code>.\Pull.ps1 -Target 'C:\Tools\HU-NextExam-Manager'</code></td></tr>
+    <tr><td>Pull.ps1 liegt in einer Installation</td><td>(<code>Modules\</code> oder <code>HU-NextExam-Manager.ps1</code> daneben) → genau dieser Ordner wird aktualisiert – Desktop, <code>C:\Tools</code> oder Share</td></tr>
+    <tr><td>Pull.ps1 liegt allein</td><td>→ Ordner <code>%USERPROFILE%\Desktop\HU-NextExam-Manager</code> wird angelegt</td></tr>
+  </table>
+  <p>Vorab wird geprüft, ob in den Zielordner geschrieben werden darf. Fehlt das Recht: PowerShell als Administrator starten oder Ordnerrechte setzen. Der Ordner braucht Änderungsrechte für alle, die das Tool aktualisieren – auch der <a href="#autopull">AutoPull</a> schreibt hinein.</p>
+  <h3 id="starten">Starten</h3>
+  <table>
+    <tr><th style="width:230px">Weg</th><th>Verhalten</th></tr>
+    <tr><td><b>Desktop-Verknüpfung</b> (empfohlen)</td><td>In <span class="ui">Settings</span> › <i>Desktop-Verknüpfung</i> den Knopf <span class="ui">Verknüpfung</span> klicken: <b>Linksklick</b> = eigener Desktop, <b>Rechtsklick</b> = öffentlicher Desktop (alle Benutzer dieses Rechners, mit Sicherheitsabfrage). Dabei wird lokal ein Starter <code>HU-NextExam-Manager.exe</code> mit Logo erzeugt – ohne Konsolenfenster, an die Taskleiste anheftbar. Alte Verknüpfungen auf <code>Start.vbs</code>/EXE desselben Ordners werden ersetzt. Klappt die EXE-Erzeugung nicht, zeigt die Verknüpfung auf <code>Start.vbs</code>.</td></tr>
+    <tr><td><code>Start.vbs</code></td><td>Doppelklick: UAC-Abfrage, dann startet das Tool ohne Konsolenfenster; das Fenster erscheint nach einigen Sekunden.</td></tr>
+    <tr><td>Manuell</td><td>In einer Administrator-PowerShell: <code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\HU-NextExam-Manager.ps1</code></td></tr>
+  </table>
+  <div class="note"><b class="h">Welche Rechte wofür?</b>Die <b>Administratorrechte</b> (UAC) braucht das Tool für die Registrierung des AutoPull-Tasks als SYSTEM und zum Schreiben in einen Tool-Ordner außerhalb des Benutzerprofils. Die Rechte für <b>GPO-Operationen</b> kommen dagegen aus dem AD (Domänen-Admins bzw. Richtlinien-Ersteller-Besitzer) – Elevation allein hilft dort nicht.</div>
+  <div class="note tip"><b class="h">Konfiguration wandert mit</b><code>config.json</code> liegt neben dem Tool, nicht in <code>%APPDATA%</code>. Der ganze Ordner lässt sich auf einen anderen Server kopieren. MDM-Secrets liegen dagegen DPAPI-verschlüsselt pro Benutzer in <code>%APPDATA%\HU-NextExam\</code> – jeder Admin hinterlegt sie selbst.</div>
+</section>
+
+<section id="settings">
+  <h2><span class="n">3</span>Settings: Tasks einrichten</h2>
+  <p>Ein <b>Task</b> ist eine Verteil-Konfiguration – z. B. eine Schule oder Domäne. Pro Server sind beliebig viele Tasks möglich.</p>
+  <ol class="steps">
+    <li>Reiter <span class="ui">Settings</span>, Bereich <i>Tasks</i>: <span class="ui">+ Neu</span> und einen Namen eingeben (z. B. den Schulnamen).</li>
+    <li>Rechts unter <i>Task-Details</i> die Felder ausfüllen (Tabelle unten).</li>
+    <li><span class="ui g">Task speichern</span>. Mit <span class="ui">Verbindung testen</span> prüfen: DC erreichbar (Ping), Student-/Teacher-Share erreichbar.</li>
+  </ol>
+  <h3 id="taskfelder">Felder eines Tasks</h3>
+  <table>
+    <tr><th style="width:260px">Feld</th><th>Bedeutung</th></tr>
+    <tr><td><b>Anzeigename</b></td><td>Name des Tasks in allen Listen.</td></tr>
+    <tr><td><b>Domain FQDN</b></td><td>z. B. <code>schule.local</code>.</td></tr>
+    <tr><td><b>DC Server (Hostname oder IP)</b></td><td>Domänencontroller für alle GPO-Operationen. <b>Den vollqualifizierten Namen eintragen</b> (z. B. <code>DC1.schule.intern</code>) – mit Kurzname oder IP kann der SYSVOL-Zugriff scheitern (siehe <a href="#fehler">Fehlerbehebung</a>).</td></tr>
+    <tr><td><b>Student-Share (UNC)</b> / <b>Teacher-Share (UNC)</b></td><td>Ablage der MSIs, z. B. <code>\\FILESRV\install\NEXT-EXAM\Student</code>. <span class="ui">...</span> öffnet die Ordnerauswahl. Clients brauchen Leserecht, Schreibrecht nur Admins.</td></tr>
+    <tr><td><b>Status-Share (Client-Feedback) - UNC</b></td><td>Optional. Clients schreiben nach jeder Prüfung eine kleine JSON-Datei hinein. Vorschlag: <code>&lt;übergeordneter Ordner des Student-Shares&gt;\_status</code>. <span class="ui">Anlegen + ACL</span> legt den Ordner an und setzt die Rechte – siehe <a href="#clients">Clients-Status</a>. Leer = kein Client-Feedback.</td></tr>
+    <tr><td><b>OU-Ziel Student</b> / <b>OU-Ziel Teacher</b></td><td>OU als <b>DistinguishedName</b>, z. B. <code>OU=Workstations,OU=EDV,DC=schule,DC=local</code>. Hierhin werden Install- und Firewall-GPOs verknüpft.</td></tr>
+    <tr><td><b>WMI-Filter Student / Teacher (Typ + Muster)</b></td><td>Trennt Student- und Teacher-PCs, wenn beide in <b>derselben OU</b> liegen – siehe <a href="#wmi">WMI-Filter</a>. Leer = kein WMI-Filter.</td></tr>
+    <tr><td><b>GPO-Name-Praefix</b></td><td>Standard <code>HU-NEXT-EXAM-</code>. Daraus entstehen die GPO-Namen (siehe <a href="#gpo">GPO Setup</a>).</td></tr>
+    <tr><td><b>Firewall-Einstellungen (fuer FW-GPOs)</b></td><td>Aufklappbar: <b>Profile</b> (Standard <code>Domain, Private</code>), <b>Student/Teacher EXE-Pfad</b> für die Programmregel (Standard <code>%ProgramFiles%\Next-Exam-Student\Next-Exam-Student.exe</code> bzw. <code>…\Next-Exam-Teacher\Next-Exam-Teacher.exe</code>), optional <b>TCP-Port zulassen</b> (Standard 22422) und <b>UDP-Ports zulassen</b> (Standard 6024,6025).</td></tr>
+  </table>
+  <p><span class="ui r">Entfernen</span> löscht den markierten Task aus der Konfiguration (mit Rückfrage) – GPOs im AD bleiben dabei bestehen; dafür gibt es <span class="ui">GPOs entfernen</span> im Reiter <span class="ui">GPO Setup</span>.</p>
+  <h3 id="wmi">WMI-Filter</h3>
+  <table>
+    <tr><th style="width:160px">Typ</th><th>Muster und Ergebnis</th></tr>
+    <tr><td><code>Prefix</code></td><td>Hostname-Anfang: <code>PC-S</code> ergibt <code>Name LIKE 'PC-S%'</code></td></tr>
+    <tr><td><code>Pattern</code></td><td>reiner LIKE-Ausdruck, z. B. <code>%-01</code></td></tr>
+    <tr><td><code>List</code></td><td>explizite Liste, komma- oder semikolongetrennt: <code>PC1,PC2,PC3</code></td></tr>
+    <tr><td><code>Custom</code></td><td>eigene WQL-Abfrage – nötig, sobald <code>NOT</code>, <code>AND</code> oder <code>OR</code> vorkommt</td></tr>
+  </table>
+  <p><b>Beispiel:</b> Der Lehrer-PC im Raum endet auf <code>-01</code> (<code>PC-EDV1-01</code>), alle anderen sind Schüler-PCs:</p>
+  <table>
+    <tr><th style="width:160px">Feld</th><th style="width:100px">Typ</th><th>Muster</th></tr>
+    <tr><td>WMI-Filter Student</td><td><code>Custom</code></td><td><code>SELECT * FROM Win32_ComputerSystem WHERE NOT Name LIKE '%-01'</code></td></tr>
+    <tr><td>WMI-Filter Teacher</td><td><code>Custom</code></td><td><code>SELECT * FROM Win32_ComputerSystem WHERE Name LIKE '%-01'</code></td></tr>
+  </table>
+  <div class="note warn"><b class="h">Regeln für das Muster</b>Einfache Anführungszeichen <code>'</code> verwenden, keine doppelten. Keine Klammern um den LIKE-Ausdruck.</div>
+  <h3 id="tenants">MDM-Tenants und Desktop-Verknüpfung</h3>
+  <p>Im Bereich <i>MDM-Tenants (Intune)</i> stehen Name, Tenant-ID, Client-ID und ob Credentials gespeichert sind. Knöpfe: <span class="ui">+ Hinzufuegen</span>, <span class="ui">Bearbeiten</span>, <span class="ui r">Entfernen</span> und <span class="ui">Secret speichern</span> (Client-Secret DPAPI-verschlüsselt speichern; die Client-ID muss vorher über <span class="ui">Bearbeiten</span> gesetzt sein). Die Einrichtung beschreibt <a href="#mdm">MDM/Intune</a>.</p>
+  <p>Der Bereich <i>Desktop-Verknüpfung</i> ist unter <a href="#starten">Starten</a> beschrieben, der Bereich <i>Tool-Update</i> unter <a href="#update">Tool-Update</a>.</p>
+</section>
+
+<section id="dashboard">
+  <h2><span class="n">4</span>Dashboard</h2>
+  <figure><a href="screenshots/dashboard.png" target="_blank"><img src="screenshots/dashboard.png" onerror="this.closest('figure').style.display='none'" alt="Dashboard mit Tool-Info, Release, MDM-Status, Clients und Tasks" loading="lazy"></a><figcaption>Dashboard: oben Tool und Release, in der Mitte MDM-Status und Clients, unten die Tasks mit Ampel</figcaption></figure>
+  <table>
+    <tr><th style="width:230px">Bereich</th><th>Inhalt</th></tr>
+    <tr><td><b>Tool</b></td><td>Tool-Version, Pfad der <code>config.json</code> und der Log-Datei. Dazu der Update-Kanal und die Prüfung der installierten Version, z. B. <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – gelesen aus <code>installed.json</code> im Tool-Ordner.</td></tr>
+    <tr><td><b>Next-Exam Release (GitHub)</b></td><td>Tag und MSI-Dateinamen für Student und Teacher. <span class="ui">aktualisieren</span> fragt neu ab.</td></tr>
+    <tr><td><b>MDM Status (Intune)</b></td><td>Erster konfigurierter Tenant mit Credentials: Intune-Version gegen GitHub-Version für Student und Teacher.</td></tr>
+    <tr><td><b>Clients</b></td><td>Task wählen: Computer, Rolle, installierte Version, Zielversion, Status und letzter Check – aus dem Status-Share. <span class="ui">Aktualisieren</span> und <span class="ui r">Aufräumen</span> siehe <a href="#clients">Clients-Status</a>.</td></tr>
+    <tr><td><b>Tasks - Deploy + GPO Status</b></td><td>Pro Task: Student-/Teacher-MSI auf dem Share, MSI-Status (<i>aktuell</i>, <i>veraltet</i>, <i>nicht deployed</i>), Install-GPOs und FW-GPOs (<i>beide OK</i>, <i>teilweise</i>, <i>fehlen</i>) und <b>Gesamt</b>: <i>OK</i>, <i>Handlungsbedarf</i> (MSI veraltet oder GPOs fehlen) oder <i>pruefen</i>.</td></tr>
+  </table>
+</section>
+
+<section id="msipull">
+  <h2><span class="n">5</span>MSI Pull</h2>
+  <ol class="steps">
+    <li><span class="ui">Release abfragen</span> – holt das aktuelle Next-Exam-Release von <code>github.com/Bildungsportal/next-exam</code> (Tag, Stand, Student- und Teacher-MSI).</li>
+    <li>Optional <span class="ui">Changelog...</span> – zeigt die Release-Notes; kopieren oder als Markdown/Text speichern.</li>
+    <li>Task(s) in der Liste markieren (<kbd>Strg</kbd>/<kbd>Shift</kbd> für mehrere) und <span class="ui g">Auswahl aktualisieren</span> – oder <span class="ui">Alle aktualisieren</span>. Doppelklick auf einen Task verteilt nur diesen.</li>
+  </ol>
+  <p>Die MSIs werden einmal ins TEMP-Verzeichnis geladen und dann auf den Student- bzw. Teacher-Share jedes Tasks kopiert. Daneben liegt je eine Versionsdatei (<code>version-student.json</code> / <code>version-teacher.json</code>), aus der das Client-Script die Zielversion liest. Die Spalten zeigen die Version pro Share und den Status (<i>aktuell</i>, <i>Student veraltet</i>, <i>Teacher veraltet</i>, <i>beide veraltet</i>). <span class="ui">Status aktualisieren</span> liest die Shares neu.</p>
+  <h3 id="archiv">Archiv</h3>
+  <p>Ersetzte MSIs wandern in den Unterordner <code>_archive\</code> des jeweiligen Shares. Aufgehoben werden die letzten <b>3</b>, ältere werden gelöscht.</p>
+  <h3 id="prerelease">Pre-Releases</h3>
+  <p>Haken <span class="ui">Pre-Releases einbeziehen</span>: Dann werden auch als Pre-Release markierte Next-Exam-Versionen berücksichtigt (in der Anzeige mit <code>[PRE-RELEASE]</code> markiert). Ohne Haken (Standard) nur stabile Releases. Die Einstellung wird gespeichert und gilt auch für den täglichen <a href="#autopull">Auto-Pull</a>.</p>
+</section>
+
+<section id="autopull">
+  <h2><span class="n">6</span>AutoPull (täglich automatisch)</h2>
+  <p>Im Reiter <span class="ui">MSI Pull</span> unten: Haken <span class="ui">Auto-Pull taeglich um</span> mit Uhrzeit (Standard <code>03:00</code>, Format HH:mm). Das registriert einen geplanten Task, der das Tool täglich ohne Fenster mit <code>-AutoPull</code> startet. Tasks, deren Shares bereits die aktuelle Version haben, werden übersprungen. Haken entfernen = Task entfernen.</p>
+  <table>
+    <tr><th style="width:160px">Modus</th><th>Verhalten</th></tr>
+    <tr><td><span class="ui">SYSTEM</span> (empfohlen)</td><td>Läuft auch ohne angemeldeten Benutzer. Voraussetzungen: Tool als Admin gestartet · das Computerkonto (<code>DOMÄNE\COMPUTERNAME$</code>) hat Lese-/Schreibrechte auf alle Shares (z. B. über die Gruppe Domänencomputer in der ACL) · Internetzugang über den System-Proxy. Task: <code>\HU-NextExam-Manager\AutoPull</code>.</td></tr>
+    <tr><td><span class="ui">User</span></td><td>Läuft nur, wenn dieser Benutzer angemeldet ist; kein Admin nötig. Verpasste Zeiten werden bei der nächsten Anmeldung nachgeholt.</td></tr>
+  </table>
+  <p>Daneben steht der aktuelle Zustand (z. B. <i>(nicht registriert)</i>).</p>
+</section>
+
+<section id="gpo">
+  <h2><span class="n">7</span>GPO Setup</h2>
+  <p>Oben die Tasks mit dem Zustand aller vier GPOs und ihrer Verknüpfungen, unten <i>GPO-Details fuer ausgewaehlten Task</i> mit Pfaden, Filtern und Rechten. Aktionen gelten für alle markierten Tasks (Mehrfachauswahl möglich). <span class="ui">Status aktualisieren</span> liest alles neu.</p>
+  <h3 id="gponamen">Die GPOs eines Tasks</h3>
+  <table>
+    <tr><th style="width:300px">Name (mit Standard-Präfix)</th><th>Zweck</th></tr>
+    <tr><td><code>HU-NEXT-EXAM-Student-Install</code><br><code>HU-NEXT-EXAM-Teacher-Install</code></td><td>Installation/Update auf den Clients</td></tr>
+    <tr><td><code>HU-NEXT-EXAM-Firewall Student</code><br><code>HU-NEXT-EXAM-Firewall Teacher</code></td><td>Firewall-Regeln</td></tr>
+    <tr><td><code>HU-NEXT-EXAM-WMI Student</code><br><code>HU-NEXT-EXAM-WMI Teacher</code></td><td>WMI-Filter (nur wenn ein Muster eingetragen ist)</td></tr>
+  </table>
+  <h3 id="gpoaktionen">Aktionen</h3>
+  <table>
+    <tr><th style="width:230px">Knopf</th><th>Wirkung</th></tr>
+    <tr><td><span class="ui g">Install-GPOs</span></td><td>Legt die Install-GPOs an oder aktualisiert sie. Auf den Clients entsteht per GPO-Einstellung (Preferences) ein <b>geplanter Task</b> <code>HU-NextExam-&lt;Rolle&gt;-AutoInstall</code> als SYSTEM. Er startet das Script <code>Startup-NextExam.ps1</code> aus SYSVOL: Version auf dem Share mit der installierten vergleichen, bei Bedarf <code>msiexec /i … /quiet /norestart</code>, danach Status-JSON schreiben. Trigger: sofort nach dem Anlegen/Aktualisieren durch Group Policy (nächster GP-Refresh, ohne Neustart), beim Systemstart (+2 Minuten) und täglich 07:30. Ist ein WMI-Muster eingetragen, wird der WMI-Filter angelegt und zugewiesen.</td></tr>
+    <tr><td><span class="ui">FW-GPOs</span></td><td>Firewall-GPOs mit Programmregeln (ein- und ausgehend) für den EXE-Pfad, optional TCP-/UDP-Ports – laut <a href="#taskfelder">Firewall-Einstellungen</a>. Regeln heißen <code>HU-NEM-…</code> und werden bei jedem Lauf neu geschrieben.</td></tr>
+    <tr><td><span class="ui">Mit OU verknuepfen</span></td><td>Verknüpft Install- und FW-GPOs mit dem jeweiligen OU-Ziel. <i>andere OU</i> in der Liste = GPO existiert und ist verknüpft, aber nicht mit der Task-OU; Verknüpfen setzt dann einen zusätzlichen Link.</td></tr>
+    <tr><td><span class="ui">WMI-Filter cleanup</span></td><td>Entfernt alle WMI-Filter mit Präfix <code>&lt;GPO-Name-Praefix&gt;WMI</code> – nötig, wenn sich das Muster ändert oder ein Filter defekt ist.</td></tr>
+    <tr><td><span class="ui r">GPOs entfernen</span></td><td>Löscht alle vier GPOs des Tasks aus AD und SYSVOL (mit Rückfrage).</td></tr>
+  </table>
+  <ol class="steps">
+    <li>Task markieren › <span class="ui g">Install-GPOs</span> › <span class="ui">FW-GPOs</span> › <span class="ui">Mit OU verknuepfen</span>.</li>
+    <li>Am Client <code>gpupdate /force</code> (oder Neustart) – der geplante Task läuft danach von selbst und installiert Next-Exam.</li>
+  </ol>
+  <div class="note warn"><b class="h">WMI-Muster geändert?</b>Bestehende Filter mit gleichem Namen werden nicht überschrieben, sondern übersprungen. Daher: <span class="ui">WMI-Filter cleanup</span>, danach <span class="ui g">Install-GPOs</span> erneut. Kontrolle in der GPMC: Ordner <i>WMI-Filter</i> sowie bei der GPO Reiter <i>Geltungsbereich</i> › <i>WMI-Filterung</i>.</div>
+  <div class="note"><b class="h">Umstieg von älteren Versionen</b>Bis v2.x lief die Installation als GPO-Startup-Script. Wer <span class="ui g">Install-GPOs</span> erneut ausführt, baut die bestehende GPO an Ort und Stelle auf den geplanten Task um (altes Startup-Script wird sauber entfernt).</div>
+</section>
+
+<section id="clients">
+  <h2><span class="n">8</span>Clients-Status</h2>
+  <p>Ist im Task ein Status-Share eingetragen, schreibt jeder Client nach jeder Prüfung eine Datei <code>&lt;COMPUTERNAME&gt;-&lt;Rolle&gt;.json</code> mit Computer, Rolle, installierter und Zielversion, Zeitpunkt und letzter Aktion (<i>aktuell</i>, <i>installed</i>, <i>error</i>).</p>
+  <ol class="steps">
+    <li><span class="ui">Settings</span> › Task › <b>Status-Share</b> eintragen (Vorschlag <code>…\_status</code> übernehmen oder anpassen).</li>
+    <li><span class="ui">Anlegen + ACL</span>: legt den Ordner an und setzt NTFS-Rechte – Domänencomputer <b>Schreiben</b>, Domänen-Admins <b>Vollzugriff</b>, Vererbung aus (nur dieser Ordner).</li>
+    <li><span class="ui g">Install-GPOs</span> erneut ausführen – erst dann kennt der Client-Task den Status-Pfad.</li>
+    <li>Nach dem nächsten Lauf am Client erscheint er im <span class="ui">Dashboard</span> unter <i>Clients</i>.</li>
+  </ol>
+  <h3 id="aufraeumen">Aufräumen</h3>
+  <p><span class="ui r">Aufräumen</span> (neben <span class="ui">Aktualisieren</span>) löscht nach einer Sicherheitsabfrage <b>alle</b> Statusdateien im Status-Share des gewählten Tasks – z. B. wenn nach einer Geräte-Umbenennung alte Rechnernamen hängen bleiben. Die Clients legen ihre Datei beim nächsten Start automatisch neu an.</p>
+</section>
+
+<section id="mdm">
+  <h2><span class="n">9</span>MDM/Intune</h2>
+  <p>Für Autopilot-/Intune-verwaltete Geräte ohne Domänenbeitritt (z. B. Geräteinitiative-Notebooks). Next-Exam wird als <b>Win32-App</b> in Intune angelegt; bei neuen Releases aktualisiert das Tool die bestehende App, die Geräte holen das Update selbst.</p>
+  <figure><a href="screenshots/mdm.png" target="_blank"><img src="screenshots/mdm.png" onerror="this.closest('figure').style.display='none'" alt="Reiter MDM Pull mit Authentifizierung, App-Status, Gruppen und Metadaten" loading="lazy"></a><figcaption>Reiter MDM Pull: Authentifizierung, App-Status, Gruppen-Zuweisung und App-Metadaten</figcaption></figure>
+  <h3 id="appreg">App-Registrierung einrichten (einmal pro Tenant)</h3>
+  <ol class="steps">
+    <li>Tenant anlegen (<span class="ui">Settings</span> › <i>MDM-Tenants</i> › <span class="ui">+ Hinzufuegen</span>) und im Reiter <span class="ui">MDM Pull</span> unter <b>Tenant:</b> wählen.</li>
+    <li>Unter <i>Authentifizierung</i> <span class="ui">Admin-Anmeldung (diese Session)</span> wählen und <span class="ui">Verbinden</span>: Der Browser öffnet sich – als <b>Globaler Administrator</b> anmelden und <b>„Consent on behalf of your organization“</b> anhaken, dann <i>Accept</i>.</li>
+    <li><span class="ui g">App einrichten</span> und bestätigen. Das Tool legt die App-Registrierung <code>HU-NextExam-Manager-MDM</code> an: öffentlicher Client (PKCE, Redirect-URIs <code>http://localhost:8400–8402/callback</code>), Berechtigungen <code>DeviceManagementApps.ReadWrite.All</code> und <code>Group.Read.All</code> (Anwendung und delegiert), Admin-Consent, Client-Secret (24 Monate). Die Zugangsdaten werden DPAPI-verschlüsselt gespeichert.</li>
+    <li>Auf <span class="ui">App-Credentials (automatisch)</span> zurückschalten und <span class="ui">Verbinden</span> – fertig. Dieser Modus läuft unbeaufsichtigt.</li>
+  </ol>
+  <div class="note warn"><b class="h">Erst Admin-Anmeldung, dann „App einrichten“</b>Ohne den Admin-Consent im Browser scheitert die App-Erstellung mit <code>consent_required</code>. Blockiert z. B. Conditional Access den localhost-Rückruf, lässt sich die App-Registrierung auch manuell im Entra-Portal anlegen – Schritt für Schritt in <code>Docs\MDM-Setup.md</code> (Knopf <span class="ui">Docs</span>). Beim ersten Verbinden fragt das Tool dann Client-ID, Tenant-ID und Secret ab.</div>
+  <table>
+    <tr><th style="width:230px">Modus</th><th>Eigenschaften</th></tr>
+    <tr><td><span class="ui">App-Credentials (automatisch)</span></td><td>Client-Credentials-Flow, unbeaufsichtigt. Secret DPAPI-verschlüsselt in <code>%APPDATA%\HU-NextExam\mdm_&lt;TenantId&gt;.cred</code> – pro Windows-Benutzer.</td></tr>
+    <tr><td><span class="ui">Admin-Anmeldung (diese Session)</span></td><td>Browser-Anmeldung (Auth-Code-Flow mit PKCE); Token gilt nur für die laufende Sitzung. Für Ersteinrichtung und Tests.</td></tr>
+  </table>
+  <h3 id="mdmdeploy">Deployen</h3>
+  <ol class="steps">
+    <li>Tenant wählen, <span class="ui">Verbinden</span>. <i>App-Status</i> zeigt Intune-Version gegen GitHub-Version für Student und Teacher.</li>
+    <li>Optional <i>Gruppen-Zuweisung (Required)</i>: <span class="ui">Gruppen laden</span>, Gruppen filtern und anhaken; <span class="ui">Verfuegbar fuer alle User</span> stellt die App zusätzlich als „verfügbar“ bereit.</li>
+    <li>Optional <i>App-Metadaten</i> anpassen: Publisher, Developer, Description, Info-URL, Install-/Uninstall-Befehl, Install-Kontext (<code>system</code>/<code>user</code>), App-Icon.</li>
+    <li><span class="ui g">Student deployen</span>, <span class="ui g">Teacher deployen</span> oder <span class="ui g">Beide deployen</span>. <span class="ui">Force</span> ignoriert den Versionsvergleich und lädt den MSI-Inhalt neu hoch.</li>
+  </ol>
+  <p>Das Tool lädt die MSI von GitHub, verpackt sie mit <code>IntuneWinAppUtil.exe</code> (wird automatisch geladen) als <code>.intunewin</code>, lädt sie in Blöcken zu 6 MB hoch, legt die Win32-App an oder aktualisiert sie, setzt Erkennungsregel (MSI-Produktcode), Install-/Uninstall-Befehle und Icon und weist die Gruppen zu.</p>
+  <p><span class="ui">Status pruefen</span> vergleicht die Metadaten zwischen GitHub-Release und Intune-App (Version, Beschreibung, Icon, Erkennungsregeln); Abweichungen erscheinen in einer Tabelle mit <i>Intune (IST)</i> und <i>Soll</i>.</p>
+  <p><b>Mehrere Tenants:</b> Jeder M365-Tenant braucht eine eigene App-Registrierung; beliebig viele Tenants sind möglich. Das Dashboard zeigt den ersten Tenant mit gespeicherten Credentials.</p>
+</section>
+
+<section id="log">
+  <h2><span class="n">10</span>Log-Viewer</h2>
+  <p>Zeigt <code>%LOCALAPPDATA%\HU-NextExam-Manager\NextExam-Manager.log</code> (Pfad auch im Dashboard). Filter <b>Level:</b> (DEBUG/INFO/WARN/ERROR) und <b>Suche:</b> für Volltext.</p>
+  <table>
+    <tr><th style="width:230px">Knopf</th><th>Wirkung</th></tr>
+    <tr><td><span class="ui">Aktualisieren</span></td><td>Log neu einlesen</td></tr>
+    <tr><td><span class="ui">Ordner oeffnen</span></td><td>Log-Ordner im Explorer</td></tr>
+    <tr><td><span class="ui r">Log loeschen</span></td><td>Log-Datei leeren (mit Rückfrage). Geht das nicht (Zugriff verweigert), bietet das Tool an, den Log-Pfad auf den Standard unter <code>%LOCALAPPDATA%</code> umzustellen.</td></tr>
+  </table>
+  <p>Auf den <b>Clients</b> schreibt das Install-Script nach <code>C:\Windows\Temp\NextExam-&lt;Rolle&gt;-Install.log</code>, msiexec nach <code>C:\Windows\Temp\NextExam-&lt;Rolle&gt;-msiexec.log</code>.</p>
+</section>
+
+<section id="update">
+  <h2><span class="n">11</span>Tool-Update und Sicherheit</h2>
+  <h3 id="updateknopf">Der Knopf Update</h3>
+  <p>Gibt es im eingestellten Kanal eine neuere, <b>signierte</b> Version, wird der Knopf <span class="ui">Update</span> rechts oben <b>gold</b> und zeigt z. B. <i>Update v3.2.1</i> (im Kanal Test mit Zusatz <i>(Test)</i>). Klick: Das Tool schließt sich, <code>Pull.ps1</code> lädt die Version, prüft sie und startet das Tool neu.</p>
+  <table>
+    <tr><th style="width:230px">Was</th><th>Wie</th></tr>
+    <tr><td><b>Quelle</b></td><td>Updates kommen nur noch aus <b>GitHub-Releases</b> des offiziellen Repositorys.</td></tr>
+    <tr><td><b>Kanal Stabil</b> (Standard)</td><td>Nur freigegebene Releases – für den Produktivbetrieb.</td></tr>
+    <tr><td><b>Kanal Test</b></td><td>Auch Vorab-Releases – zum Ausprobieren vor der Freigabe.</td></tr>
+    <tr><td><b>Prüfsumme</b></td><td>Jedes Release enthält <code>HU-NextExam-Manager-files.sha256</code>: SHA256 aller Dateien, erstellt von den automatischen Tests auf GitHub.</td></tr>
+    <tr><td><b>Signatur</b></td><td><code>HU-NextExam-Manager-files.sha256.p7s</code> ist die PKCS#7-Signatur des Herausgebers über die Prüfsummen-Datei. Angeboten und installiert werden nur Releases mit gültiger Signatur des <b>eingebauten</b> Zertifikats (Fingerabdruck <code>1B669AE2…</code>).</td></tr>
+    <tr><td><b>Alles oder nichts</b></td><td>Zuerst werden <b>alle</b> Dateien geladen und geprüft, erst dann ersetzt. Stimmt eine Prüfsumme nicht, bleibt alles unverändert.</td></tr>
+    <tr><td><b>Ergebnis</b></td><td><span class="ui">Dashboard</span> › <i>Tool</i> zeigt Kanal und <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – aus <code>installed.json</code>.</td></tr>
+  </table>
+  <div class="note tip"><b class="h">Was schützt was?</b>Die Prüfsumme erkennt beschädigte oder unterwegs veränderte Downloads. Gegen ein manipuliertes Repository hilft die Signatur – der private Schlüssel liegt nur beim Herausgeber, nie auf GitHub. Geprüft wird die Signatur selbst und der Fingerabdruck des Zertifikats, ohne Online-Sperrlistenprüfung.</div>
+  <h3 id="updatemenue">Rechtsklick auf Update</h3>
+  <table>
+    <tr><th style="width:300px">Eintrag</th><th>Wirkung</th></tr>
+    <tr><td><i>Andere Version / Vorversion installieren …</i></td><td>Liste aller Releases mit den Spalten Version, Kanal, Stand, Datum, Prüfsumme, Signatur und Änderungen. Unsignierte Releases sind nicht installierbar.</td></tr>
+    <tr><td><i>Update-Einstellungen …</i></td><td>springt zu <span class="ui">Settings</span> › <i>Tool-Update</i></td></tr>
+    <tr><td><i>Release signieren (Herausgeber) …</i></td><td>nur sichtbar auf dem PC, auf dem der private Schlüssel liegt</td></tr>
+    <tr><td><i>Release freigeben (Herausgeber) …</i></td><td>macht ein Vorab-Release zum freigegebenen Release (siehe unten)</td></tr>
+  </table>
+  <h3 id="updatesettings">Settings › Tool-Update</h3>
+  <table>
+    <tr><th style="width:300px">Einstellung</th><th>Bedeutung</th></tr>
+    <tr><td><b>Kanal</b></td><td>Stabil oder Test</td></tr>
+    <tr><td><span class="ui">Nur signierte Updates annehmen (empfohlen)</span></td><td>Standard: an. Abhaken nur nach einer Warnung; gespeichert als <code>AllowUnsigned</code> in <code>update.json</code> im Tool-Ordner.</td></tr>
+    <tr><td><b>Fingerabdruck</b></td><td>Fingerabdruck des Signatur-Zertifikats. Für die offizielle Quelle ist er eingebaut – nichts einzustellen.</td></tr>
+  </table>
+  <h3 id="herausgeber">Ablauf für den Herausgeber</h3>
+  <div class="flow"><span>Push</span><i>→</i><span>Vorab-Release</span><i>→</i><span>CI hängt Prüfsumme an</span><i>→</i><span>Release signieren</span><i>→</i><span>im Kanal Test prüfen</span><i>→</i><span>Release freigeben</span></div>
+  <ol class="steps">
+    <li>Push ins Repository, daraus entsteht ein <b>Vorab-Release</b>; die automatischen Tests auf GitHub hängen die Prüfsummen-Datei an.</li>
+    <li>Rechtsklick auf <span class="ui">Update</span> › <i>Release signieren (Herausgeber) …</i>. Ein GitHub-Token mit Schreibrecht wird einmal abgefragt und DPAPI-verschlüsselt in <code>%APPDATA%\HU-NextExam\GitHubSignToken.xml</code> gespeichert.</li>
+    <li>Im Kanal <b>Test</b> installieren und prüfen.</li>
+    <li>Rechtsklick › <i>Release freigeben (Herausgeber) …</i> – wird ohne gültige Signatur verweigert.</li>
+  </ol>
+  <p>Kommandozeile: <code>Tools\Sign-NextExamRelease.ps1</code>.</p>
+  <h3 id="hilfe">Hilfe</h3>
+  <p>Knopf <span class="ui">Anleitung</span> oder <kbd>F1</kbd>: lädt diese Anleitung immer aktuell von GitHub, passend zur installierten Version; ohne Verbindung öffnet sich die lokale Kopie <code>Docs\Anleitung.html</code>.</p>
+  <h3 id="sicherheit">Sicherheitshinweise</h3>
+  <ul>
+    <li>Graph-API-Secrets und der Signier-Token werden DPAPI-verschlüsselt gespeichert. <code>config.json</code> mit echten Tokens nie in eine Versionsverwaltung legen.</li>
+    <li>MSI-Shares: Schreiben nur für Admins, Lesen für die Clients.</li>
+    <li>Ein optionaler GitHub-Token in <code>config.json</code> (<code>ToolSettings.GitHubToken</code>, mehr API-Abrufe pro Stunde) sollte ein feingranularer Nur-Lese-Token nur für dieses Repository sein.</li>
+    <li>Sicherheitslücken bitte nicht als öffentliches Issue melden, sondern über <a href="https://github.com/ChiliApple/HU-NextExam-Manager/security/advisories/new" target="_blank">GitHub Security Advisories</a>.</li>
+  </ul>
+</section>
+
+<section id="fehler">
+  <h2><span class="n">12</span>Fehlerbehebung</h2>
+  <h3 id="e80070005">Install-GPOs / FW-GPOs: „Zugriff verweigert (0x80070005)“</h3>
+  <p>Typisch: Löschen und WMI-Filter funktionieren, alles mit SYSVOL-Anteil nicht. Zwei bekannte Ursachen – jeweils <b>auf dem Rechner prüfen, auf dem das Tool läuft</b>:</p>
+  <ol class="steps">
+    <li><b>DC als Kurzname oder IP eingetragen.</b> SYSVOL ist von manchen Servern nur über den FQDN des DCs erreichbar. In <span class="ui">Settings</span> › Task › <b>DC Server</b> den FQDN eintragen (z. B. <code>DC1.schule.intern</code> statt <code>DC1</code>) und speichern. Test: <code>Get-GPO -All -Server DC1.schule.intern</code> gegen <code>-Server DC1</code>.</li>
+    <li><b>Veralteter DNS-Eintrag der Domäne.</b> <code>nslookup &lt;domäne&gt;</code> – liefert es mehr Adressen als es DCs gibt, zeigt ein Eintrag auf einen Nicht-DC, und <code>\\&lt;domäne&gt;\SYSVOL</code> läuft zeitweise ins Leere. Den falschen A-Eintrag am Zonen-Stamm im DNS löschen.</li>
+  </ol>
+  <p>Erscheint die Meldung beim Aktualisieren einer bestehenden Install-GPO (Datei mit anderem Besitzer aus einem früheren Lauf), bietet das Tool an, <b>nur diese eine GPO</b> zu löschen und neu anzulegen. Ihre OU-Verknüpfungen müssen danach mit <span class="ui">Mit OU verknuepfen</span> neu gesetzt werden.</p>
+  <h3 id="clientupdate">Clients aktualisieren nicht</h3>
+  <ul>
+    <li>Bis v2.x startete die Installation per GPO-Startup-Script – dessen Auslösung beim Systemstart war auf manchen Clients unzuverlässig. Seit v3.0 übernimmt ein geplanter Task (sofort nach GP-Refresh, beim Start und täglich). Ältere GPOs mit <span class="ui g">Install-GPOs</span> neu schreiben – sie werden an Ort und Stelle umgebaut.</li>
+    <li>Am Client prüfen: Aufgabenplanung › <code>HU-NextExam-&lt;Rolle&gt;-AutoInstall</code> vorhanden? Log <code>C:\Windows\Temp\NextExam-&lt;Rolle&gt;-Install.log</code> lesen (z. B. <i>MSI nicht erreichbar</i>, msiexec-ExitCode).</li>
+    <li><span class="ui">GPO Setup</span>: Sind die GPOs mit der richtigen OU verknüpft (<i>andere OU</i>?) und passt der WMI-Filter auf den Rechnernamen?</li>
+    <li><span class="ui">MSI Pull</span>: Liegt die aktuelle Version auf dem Share (<i>aktuell</i>)?</li>
+  </ul>
+  <h3 id="weitere">Weitere Fälle</h3>
+  <table>
+    <tr><th style="width:280px">Problem</th><th>Lösung</th></tr>
+    <tr><td>Verknüpfen meldet „kein DistinguishedName“</td><td>OU-Ziel als DN eintragen: <code>OU=Name,DC=domain,DC=tld</code>.</td></tr>
+    <tr><td>Neues WMI-Muster wirkt nicht</td><td><span class="ui">WMI-Filter cleanup</span>, dann <span class="ui g">Install-GPOs</span>.</td></tr>
+    <tr><td>Alte Rechnernamen im Clients-Status</td><td><span class="ui r">Aufräumen</span> im Dashboard.</td></tr>
+    <tr><td>AutoPull als SYSTEM läuft, aber Shares bleiben alt</td><td>Das Computerkonto braucht Schreibrecht auf die Shares und Internetzugang über den System-Proxy – sonst Modus <span class="ui">User</span>.</td></tr>
+    <tr><td>Next-Exam-Pre-Release wird nicht gefunden</td><td>Haken <span class="ui">Pre-Releases einbeziehen</span> im Reiter <span class="ui">MSI Pull</span>.</td></tr>
+    <tr><td>MDM: „App einrichten“ scheitert mit <code>consent_required</code></td><td>Zuerst <span class="ui">Admin-Anmeldung (diese Session)</span> mit Consent für die Organisation – siehe <a href="#appreg">App-Registrierung</a>.</td></tr>
+    <tr><td>Pull.ps1: „Kein Schreibzugriff“</td><td>PowerShell als Administrator starten oder Ordnerrechte setzen.</td></tr>
+    <tr><td>Tool startet nicht aus der ISE</td><td>Das ist Absicht (WPF stürzt in der ISE ab) – über Verknüpfung, <code>Start.vbs</code> oder powershell.exe starten.</td></tr>
+  </table>
+</section>
+
+<section id="lizenz">
+  <h2><span class="n">13</span>Lizenz und Hinweise</h2>
+  <h3 id="nutzungslizenz">Nutzungslizenz</h3>
+  <p>Ab v3.2.0 steht der HU-NextExam-Manager unter einer Nutzungslizenz. Maßgeblich ist die Datei <code>LICENSE</code>; zusammengefasst:</p>
+  <table>
+    <tr><th style="width:50%">Erlaubt</th><th>Nicht erlaubt</th></tr>
+    <tr><td>kostenlos benutzen und installieren<br>in der eigenen Organisation kopieren<br><code>config.json</code> und <code>update.json</code> anpassen</td><td>das Tool ändern<br>veränderte Fassungen weitergeben<br>verkaufen<br>außerhalb des offiziellen Repositorys veröffentlichen</td></tr>
+  </table>
+  <h3 id="nextexam">Next-Exam</h3>
+  <p>„Next-Exam“ ist Software des <b>Bildungsportals</b> (Bildungsministerium Österreich) bzw. des jeweiligen Rechteinhabers. Der HU-NextExam-Manager ist ein <b>inoffizielles Drittanbieter-Hilfsmittel</b> ohne Verbindung zum Bildungsportal oder zu den Next-Exam-Entwicklern.</p>
+  <ul>
+    <li>Er lädt ausschließlich offiziell veröffentlichte MSI-Installer vom offiziellen Next-Exam-Release, kopiert sie unverändert in Shares der eigenen Organisation und verteilt sie per <code>msiexec</code> bzw. Intune.</li>
+    <li>Er enthält keine Next-Exam-Dateien, verändert keine MSIs, umgeht keine Lizenzbestimmungen und bietet keinen Support für Next-Exam selbst.</li>
+    <li>Der Einsatz von Next-Exam muss den Lizenzbedingungen von Next-Exam/Bildungsportal entsprechen.</li>
+    <li>Nennungen von Next-Exam, Microsoft, GitHub, Azure und Intune beschreiben nur die technische Zusammenarbeit der Systeme. Der Einsatz erfolgt auf eigene Verantwortung des Administrators.</li>
+  </ul>
+  <p>Details: <code>Docs\NOTICE.md</code>.</p>
+</section>
+
+<footer>HU-NextExam-Manager – Anleitung · <a href="https://github.com/ChiliApple/HU-NextExam-Manager" target="_blank">github.com/ChiliApple/HU-NextExam-Manager</a> · Nutzungslizenz siehe LICENSE</footer>
+</main>
+</div>
+<script>
+(function(){
+  var toc=document.getElementById('toc'),secs=[].slice.call(document.querySelectorAll('main section'));
+  secs.forEach(function(s){
+    var h=s.querySelector('h2,h1');var a=document.createElement('a');a.href='#'+s.id;a.textContent=h.textContent.replace(/^\d+/,'').trim();a.dataset.s=s.id;toc.appendChild(a);
+    [].slice.call(s.querySelectorAll('h3[id]')).forEach(function(h3){var b=document.createElement('a');b.href='#'+h3.id;b.className='l2';b.textContent=h3.textContent;toc.appendChild(b);});
+  });
+  var links=[].slice.call(toc.querySelectorAll('a[data-s]'));
+  function spy(){var cur=secs[0].id;secs.forEach(function(s){if(s.getBoundingClientRect().top<120)cur=s.id;});links.forEach(function(l){l.classList.toggle('act',l.dataset.s===cur);});}
+  window.addEventListener('scroll',spy,{passive:true});spy();
+  var root=document.documentElement,tb=document.getElementById('theme');
+  try{var t=localStorage.getItem('hunem-theme');if(t)root.setAttribute('data-theme',t);}catch(e){}
+  tb.onclick=function(){var dark=root.getAttribute('data-theme')?root.getAttribute('data-theme')==='dark':matchMedia('(prefers-color-scheme: dark)').matches;var n=dark?'light':'dark';root.setAttribute('data-theme',n);try{localStorage.setItem('hunem-theme',n);}catch(e){}};
+  var q=document.getElementById('q'),orig=secs.map(function(s){return s.innerHTML;});
+  q.addEventListener('input',function(){
+    var v=q.value.trim().toLowerCase();
+    secs.forEach(function(s,i){
+      s.innerHTML=orig[i];
+      if(!v){s.classList.remove('hide');return;}
+      var hit=s.textContent.toLowerCase().indexOf(v)>=0;s.classList.toggle('hide',!hit);
+      if(hit){var w=document.createTreeWalker(s,NodeFilter.SHOW_TEXT,null,false),n,list=[];while(n=w.nextNode())if(n.nodeValue.toLowerCase().indexOf(v)>=0)list.push(n);
+        list.forEach(function(n){var i2=n.nodeValue.toLowerCase().indexOf(v);var m=document.createElement('mark');var r=n.splitText(i2);r.splitText(v.length);m.textContent=r.nodeValue;r.parentNode.replaceChild(m,r);});}
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -60,8 +60,8 @@ und keine Zusammenarbeit dar.
 
 ## Kontakt / Haftung
 
-Dieses Tool wird unter der **MIT License** bereitgestellt (siehe `LICENSE`
-im Root). Der Autor übernimmt keine Haftung für:
+Dieses Tool wird ab v3.2.0 unter einer **Nutzungslizenz** bereitgestellt (siehe `LICENSE`
+im Root; frühere Versionen: MIT). Der Autor übernimmt keine Haftung für:
 - Fehler in Konfigurationen die durch das Tool in AD/GPO vorgenommen werden
 - Ausfälle der Next-Exam-Services durch fehlerhafte Versionen
 - Policy-Verletzungen der Administrator-Organisation beim Einsatz des Tools

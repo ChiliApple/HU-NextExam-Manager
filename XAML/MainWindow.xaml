@@ -291,7 +291,8 @@
                     <Image x:Name="imgAppLogo" Height="32" Width="32" Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <Button x:Name="btnUpdate" Content="Aktuell" IsEnabled="False" Width="110"/>
+                    <Button x:Name="btnHelp" Content="Anleitung" Width="90" Margin="0,0,6,0" ToolTip="Anleitung (F1) - wird immer aktuell von GitHub geladen"/>
+                    <Button x:Name="btnUpdate" Content="Aktuell" IsEnabled="False" MinWidth="110"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -318,6 +319,7 @@
                             <TextBlock x:Name="lblDashToolVer"    Text="Tool-Version: ..."/>
                             <TextBlock x:Name="lblDashConfigPath" Text="Config: ..."/>
                             <TextBlock x:Name="lblDashLogPath"    Text="Log:    ..."/>
+                            <TextBlock x:Name="lblDashUpdInfo"    Text="Update: ..." TextWrapping="Wrap"/>
                         </StackPanel>
                     </GroupBox>
 
@@ -817,10 +819,11 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="Settings">
+            <TabItem x:Name="tabSettings" Header="Settings">
                 <Grid Margin="6">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" MinHeight="250"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
@@ -1012,6 +1015,37 @@
                             <TextBlock x:Name="lblShortcutInfo" Grid.Column="1" Foreground="#888" FontSize="11" Margin="10,0,0,0"
                                        VerticalAlignment="Center" TextWrapping="Wrap"
                                        Text="Linksklick = mein Desktop, Rechtsklick = öffentlicher Desktop (alle Benutzer). Starter-EXE wird lokal erzeugt (nicht im Repo). Tipp: Verknüpfung per Rechtsklick an Taskleiste anheften."/>
+                        </Grid>
+                    </GroupBox>
+
+                    <!-- Row 3: Tool-Update (Kanal, Signaturpflicht) - update.json im Tool-Ordner -->
+                    <GroupBox x:Name="grpToolUpdate" Header="Tool-Update (GitHub-Releases)" Grid.Row="3" Margin="0,6,0,0">
+                        <Grid Margin="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Column="0" Text="Kanal:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <ComboBox x:Name="cmbUpdChannel" Grid.Column="1" Width="200" VerticalAlignment="Center"
+                                      ToolTip="Stabil = nur freigegebene Releases. Test = auch Vorab-Releases (neue Versionen vor der Freigabe).">
+                                <ComboBoxItem Content="Stabil (empfohlen)"/>
+                                <ComboBoxItem Content="Test (auch Vorab-Releases)"/>
+                            </ComboBox>
+                            <CheckBox x:Name="chkUpdRequireSig" Grid.Column="2" Content="Nur signierte Updates annehmen (empfohlen)" Margin="16,0,0,0" VerticalAlignment="Center" IsChecked="True"
+                                      ToolTip="Nur Releases mit gueltiger Signatur des Herausgeber-Zertifikats werden angeboten und installiert. Schuetzt gegen manipulierte Downloads und ein missbrauchtes GitHub-Konto."/>
+                            <TextBlock Grid.Column="3" Text="Fingerabdruck:" VerticalAlignment="Center" Margin="16,0,6,0"/>
+                            <TextBox x:Name="txtUpdSigner" Grid.Column="4" VerticalAlignment="Center" FontFamily="Consolas"
+                                     ToolTip="SHA1-Fingerabdruck (Thumbprint) des Signatur-Zertifikats. Vorbelegt mit dem eingebauten Herausgeber-Zertifikat - nur fuer eine eigene Update-Quelle aendern."/>
+                            <Button x:Name="btnUpdSave" Grid.Column="5" Content="Speichern" Width="100" Margin="8,0,0,0"/>
+                            <TextBlock x:Name="lblUpdInfo" Grid.Row="1" Grid.ColumnSpan="6" Foreground="#888" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" Text="Update: ..."/>
                         </Grid>
                     </GroupBox>
                 </Grid>

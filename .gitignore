@@ -20,3 +20,8 @@ desktop.ini
 
 # Lokal erzeugter Starter (Settings > Desktop-Verknuepfung)
 HU-NextExam-Manager.exe
+
+# Lokale Update-Einstellungen / Installationsnachweis (Pull.ps1)
+update.json
+installed.json
+*.pulltmp
