@@ -1,12 +1,14 @@
 # Changelog
 
-## v3.2.2 (2026-10-02)
+## v3.2.3 (2026-10-02)
 
 ### Behoben
 - **Clients-Status zeigte bei gemeinsamem Status-Share alle Schulen** (z.B. BHAK + BORG
   Eisenerz auf demselben Schulserver): Nutzen mehrere Tasks denselben Status-Share, zeigt
-  der Clients-Reiter pro Task nur Rechner aus den AD-OUs des Tasks (Student- + Teacher-OU,
-  Abfrage per Get-ADComputer gegen den DC des Tasks, 10 min Cache, "Aktualisieren" leert ihn).
+  der Clients-Reiter pro Task nur dessen Rechner: alle Computer unter den OUs (bzw. der
+  Domaene), an denen die Install-GPOs des Tasks verknuepft sind (gPLink) - unabhaengig von
+  den im Task eingetragenen OUs. Nur wenn keine Verknuepfung gefunden wird, gelten die
+  Student-/Teacher-OUs aus den Task-Settings. 10 min Cache, "Aktualisieren" leert ihn.
   "Aufraeumen" loescht dann nur die Eintraege dieses Tasks; ist die AD-Abfrage nicht
   moeglich, wird nicht gefiltert bzw. das Aufraeumen abgebrochen. Tasks mit eigenem
   Status-Share: unveraendert.

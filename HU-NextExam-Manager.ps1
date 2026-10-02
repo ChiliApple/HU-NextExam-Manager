@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.2.2'
+$script:ToolVersion = '3.2.3'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -3102,38 +3102,61 @@ function Test-NEMSharedStatusPath($Task) {
     if (-not $p) { return $false }
     return (@($script:Config.Tasks | Where-Object { $_.Id -ne $Task.Id -and (Get-NEMNormPath $_.StatusSharePath) -eq $p }).Count -gt 0)
 }
-# Rechnernamen aus Student- + Teacher-OU des Tasks (10 min Cache). Rueckgabe: @{ Names = HashSet; Err = '' }
+# Rechner des Tasks (10 min Cache). Rueckgabe: @{ Names = HashSet; Err = ''; Source = '' }
+#   1. Wo sind die Install-GPOs des Tasks (<Prefix>Student-Install / <Prefix>Teacher-Install) verknuepft?
+#      -> alle Rechner unter diesen OUs (bzw. Domaene). Das sind genau die Rechner, die den Task bekommen
+#      und ihren Status schreiben - unabhaengig davon, was im Task als OU eingetragen ist.
+#   2. Keine GPO / keine Verknuepfung gefunden -> Student-/Teacher-OU aus den Task-Settings.
 function Get-NEMTaskComputerNames($Task) {
     $key = "$($Task.Id)"
     $c = $script:ClientOuCache[$key]
     if ($c -and ((Get-Date) - $c.Time).TotalMinutes -lt 10) { return $c }
     $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-    $err = ''
-    $ous = @($Task.OUTargetStudent, $Task.OUTargetTeacher | Where-Object { "$_".Trim() } | Select-Object -Unique)
-    if (-not $ous.Count) { $err = 'keine Student-/Teacher-OU im Task' }
-    else {
+    $err = ''; $source = ''
+    $srv = $(if ("$($Task.DCServer)".Trim()) { "$($Task.DCServer)".Trim() } else { "$($Task.DomainFQDN)".Trim() })
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop -Verbose:$false | Out-Null
+        $adp = @{}; if ($srv) { $adp.Server = $srv }
+        # 1. Verknuepfungen der Install-GPOs (gPLink an OU oder Domaene)
+        $bases = New-Object System.Collections.Generic.List[string]
         try {
-            Import-Module ActiveDirectory -ErrorAction Stop -Verbose:$false | Out-Null
-            $srv = $(if ("$($Task.DCServer)".Trim()) { "$($Task.DCServer)".Trim() } else { "$($Task.DomainFQDN)".Trim() })
-            foreach ($ou in $ous) {
-                $p = @{ Filter = '*'; SearchBase = $ou; SearchScope = 'Subtree'; ErrorAction = 'Stop' }
-                if ($srv) { $p.Server = $srv }
-                foreach ($co in @(Get-ADComputer @p)) { [void]$names.Add("$($co.Name)") }
+            Import-Module GroupPolicy -ErrorAction Stop -Verbose:$false | Out-Null
+            $prefix = $(if ($Task.GPONamePrefix) { $Task.GPONamePrefix } else { 'HU-NEXT-EXAM-' })
+            foreach ($role in 'Student', 'Teacher') {
+                $gp = @{ Name = "$prefix$role-Install"; ErrorAction = 'SilentlyContinue' }
+                if ("$($Task.DomainFQDN)".Trim()) { $gp.Domain = "$($Task.DomainFQDN)".Trim() }
+                if ($srv) { $gp.Server = $srv }
+                $g = Get-GPO @gp
+                if (-not $g) { continue }
+                foreach ($o in @(Get-ADObject @adp -LDAPFilter "(gPLink=*{$($g.Id)}*)" -ErrorAction Stop)) {
+                    if (-not $bases.Contains("$($o.DistinguishedName)")) { $bases.Add("$($o.DistinguishedName)") }
+                }
             }
-        } catch { $err = "AD-Abfrage fehlgeschlagen: $($_.Exception.Message)" }
-    }
-    $r = @{ Names = $names; Err = $err; Time = Get-Date }
+        } catch { }
+        if ($bases.Count) { $source = 'GPO-Verknuepfungen' }
+        else {
+            # 2. Rueckfall: OUs aus den Task-Settings
+            foreach ($ou in @($Task.OUTargetStudent, $Task.OUTargetTeacher | Where-Object { "$_".Trim() } | Select-Object -Unique)) { $bases.Add("$ou") }
+            $source = 'Task-OUs'
+        }
+        if (-not $bases.Count) { $err = 'Install-GPOs nicht verknuepft und keine OU im Task' }
+        foreach ($b in $bases) {
+            foreach ($co in @(Get-ADComputer @adp -Filter '*' -SearchBase $b -SearchScope Subtree -ErrorAction Stop)) { [void]$names.Add("$($co.Name)") }
+        }
+    } catch { $err = "AD-Abfrage fehlgeschlagen: $($_.Exception.Message)" }
+    $r = @{ Names = $names; Err = $err; Source = $source; Time = Get-Date }
     if (-not $err) { $script:ClientOuCache[$key] = $r }
     return $r
 }
 # Status-Zeilen des Tasks (bei gemeinsamem Status-Share nach OU gefiltert)
 function Get-NEMTaskClientRows($Task) {
     $rows = @(Read-ClientStatus -Path $Task.StatusSharePath)
-    $info = [pscustomobject]@{ Rows = $rows; Shared = $false; Total = $rows.Count; Err = '' }
+    $info = [pscustomobject]@{ Rows = $rows; Shared = $false; Total = $rows.Count; Err = ''; Source = '' }
     if (-not (Test-NEMSharedStatusPath $Task)) { return $info }
     $info.Shared = $true
     $ad = Get-NEMTaskComputerNames $Task
     if ($ad.Err) { $info.Err = $ad.Err; return $info }
+    $info.Source = $ad.Source
     $info.Rows = @($rows | Where-Object {
         $n = "$($_.ComputerName)"
         if ("$($_.Role)" -eq '-') { $n = $n -replace '-(Student|Teacher)$', '' }   # Parse-Fehler-Zeile: Name aus Dateiname
@@ -3155,7 +3178,7 @@ function Refresh-ClientsList {
         $script:lstClients.ItemsSource = @($i.Rows)
         if (-not $i.Shared) { $script:lblClientShare.Text = $t.StatusSharePath }
         elseif ($i.Err) { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, NICHT gefiltert ($($i.Err))" }
-        else { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, gefiltert nach AD-OUs: $(@($i.Rows).Count) von $($i.Total)" }
+        else { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, gefiltert nach $($i.Source): $(@($i.Rows).Count) von $($i.Total)" }
     } catch {
         $script:lblClientShare.Text = "Fehler: $_"
     }
@@ -3200,7 +3223,7 @@ $script:btnClientClear.Add_Click({
             return
         }
         $files = @($i.Rows | ForEach-Object { $_.File } | Where-Object { $_ })
-        $what = "Die $($files.Count) Status-Eintraege von $($t.DisplayName) (Rechner aus den Task-OUs; Eintraege anderer Tasks im selben Share bleiben)"
+        $what = "Die $($files.Count) Status-Eintraege von $($t.DisplayName) (Rechner unter den $($i.Source); Eintraege anderer Tasks im selben Share bleiben)"
     }
     $answer = [System.Windows.MessageBox]::Show(
         "$what wirklich loeschen?`n`nShare: $($t.StatusSharePath)`n`nDie Clients legen ihren Status beim naechsten Start automatisch neu an.",
