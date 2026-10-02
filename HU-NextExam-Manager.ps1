@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.2.4'
+$script:ToolVersion = '3.2.5'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot

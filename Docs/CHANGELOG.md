@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.2.5 (2026-10-02)
+
+### Geaendert
+- Auswertung im Clients-Bereich steht jetzt in der Ueberschrift der Box statt unter der
+  Liste (kein Platzverlust fuer die Liste). v3.2.4 hatte sie noch unter der Liste.
+
 ## v3.2.4 (2026-10-02)
 
 ### Neu
