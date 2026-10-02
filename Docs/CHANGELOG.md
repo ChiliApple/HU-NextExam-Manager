@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.1 (2026-10-02)
+
+### Behoben
+- **Erstinstallation landete im unsichtbaren Desktop-Ordner** bei OneDrive-Desktop-Umleitung:
+  Pull.ps1 nutzt jetzt den echten Desktop (`[Environment]::GetFolderPath('Desktop')`)
+  statt fest `%USERPROFILE%\Desktop`.
+- **Admin-Warnung hinter dem Splash versteckt** (Start ohne Admin-Rechte): Der Splash
+  wird vor der Meldung geschlossen, die Meldung haengt am Hauptfenster.
+
 ## v3.2.0 (2026-10-02)
 
 ### Sicherheit - signierte Updates (wie HUMig v2.0.55+)

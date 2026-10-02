@@ -173,7 +173,12 @@ function Stop-HMPull([string]$Msg) {
 if (-not $Target) {
     $here = $PSScriptRoot
     if ($here -and ((Test-Path (Join-Path $here 'Modules')) -or (Test-Path (Join-Path $here 'HU-NextExam-Manager.ps1')))) { $Target = $here; $mode = 'Update (an Ort und Stelle)' }
-    else { $Target = Join-Path $env:USERPROFILE 'Desktop\HU-NextExam-Manager'; $mode = 'Erstinstallation (Desktop)' }
+    else {
+        # echter Desktop (auch bei OneDrive-Umleitung), nicht fest %USERPROFILE%\Desktop
+        $desk = [Environment]::GetFolderPath('Desktop')
+        if (-not $desk) { $desk = Join-Path $env:USERPROFILE 'Desktop' }
+        $Target = Join-Path $desk 'HU-NextExam-Manager'; $mode = 'Erstinstallation (Desktop)'
+    }
 } else { $mode = 'Ziel per -Target' }
 $Target = $Target.TrimEnd('\')
 

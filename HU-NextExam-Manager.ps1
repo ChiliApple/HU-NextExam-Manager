@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.2.0'
+$script:ToolVersion = '3.2.1'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -3687,7 +3687,10 @@ $script:Window.Add_Loaded({
         try {
             if (-not (Test-IsElevated)) {
                 Set-Status "WARNUNG: Tool laeuft NICHT als Admin - GPO-Operationen werden scheitern"
-                [System.Windows.MessageBox]::Show(
+                # Splash ist Topmost und wuerde die Meldung verdecken -> vorher schliessen, Meldung ans Hauptfenster haengen
+                try { if ($script:SplashAutoTimer) { $script:SplashAutoTimer.Stop(); $script:SplashAutoTimer = $null } } catch {}
+                try { if ($script:SplashWindow) { $script:SplashWindow.Close(); $script:SplashWindow = $null } } catch {}
+                [System.Windows.MessageBox]::Show($script:Window,
                     "Das Tool laeuft OHNE lokale Admin-Rechte.`n`n" +
                     "GPO-Erstellen, -Entfernen, -Verknuepfen und FW-GPO-Rules werden mit " +
                     "'Zugriff verweigert' (E_ACCESSDENIED) fehlschlagen.`n`n" +
