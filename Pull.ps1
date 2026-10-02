@@ -23,7 +23,8 @@
     Lokale Daten bleiben unangetastet: config.json, update.json, installed.json, Logs, HU-NextExam-Manager.exe (Starter).
     GitHub-Token (optional, nur fuer mehr API-Aufrufe/h): config.json > ToolSettings.GitHubToken.
 .NOTES
-    Manuell: powershell -ExecutionPolicy Bypass -File Pull.ps1 [-Version 3.2.0] [-Channel Test]
+    Manuell: powershell -ExecutionPolicy Bypass -File Pull.ps1 [-Version 3.2.0] [-Channel Test] [-NoStart]
+    Nach dem Update wird das Tool automatisch gestartet (ausser -NoStart).
     Zielmaschine: der Server/PC, auf dem der HU-NextExam-Manager liegt (z.B. SCHULSERVER, C:\Tools\HU-NextExam-Manager).
 #>
 param(
@@ -364,15 +365,24 @@ try {
 Write-Host "`n=== Pull fertig === $ok Dateien ($verified)$(if ($repl) { " | $repl NICHT ersetzt" })" -ForegroundColor Cyan
 
 if ($repl) { Stop-HMPull 'Einzelne Dateien konnten nicht ersetzt werden (gesperrt?) - Tool wird NICHT automatisch gestartet. Pull erneut ausfuehren.' }
-# Neustart nur, wenn das Tool den Pull selbst ausgeloest hat (-WaitPid); Elevation wird vom Pull-Fenster geerbt
-if ($WaitPid -gt 0 -and -not $NoStart) {
+# Tool nach dem Update gleich wieder starten (ausser -NoStart, z.B. CI)
+#   Pull laeuft schon als Admin -> direkt starten (erbt die Rechte, keine zweite UAC-Abfrage)
+#   sonst ueber Start.vbs (UAC-Abfrage, fensterlos)
+if (-not $NoStart) {
     $main = Join-Path $Target 'HU-NextExam-Manager.ps1'
-    if (Test-Path -LiteralPath $main) {
-        Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$main`"" -WorkingDirectory $Target
-        Write-Host 'HU-NextExam-Manager wird neu gestartet.' -ForegroundColor Green
+    $vbs  = Join-Path $Target 'Start.vbs'
+    $isAdmin = $false
+    try { $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { }
+    try {
+        if ($isAdmin -and (Test-Path -LiteralPath $main)) {
+            Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$main`"" -WorkingDirectory $Target
+        } elseif (Test-Path -LiteralPath $vbs) {
+            Start-Process wscript.exe -ArgumentList "`"$vbs`"" -WorkingDirectory $Target
+        } elseif (Test-Path -LiteralPath $main) {
+            Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$main`"" -WorkingDirectory $Target
+        }
+        Write-Host 'HU-NextExam-Manager wird gestartet.' -ForegroundColor Green
         Start-Sleep -Seconds 2
-    }
-    exit 0
+    } catch { Write-Host "[WARN] Start fehlgeschlagen: $($_.Exception.Message) - bitte Start.vbs von Hand starten" -ForegroundColor Yellow }
 }
-if (-not $NoStart) { Write-Host "Start: cd '$Target'; .\HU-NextExam-Manager.ps1   (oder Start.vbs)" -ForegroundColor Yellow }
 exit 0

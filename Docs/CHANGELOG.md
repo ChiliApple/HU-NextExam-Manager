@@ -2,6 +2,11 @@
 
 ## v3.2.1 (2026-10-02)
 
+### Geaendert
+- **Tool startet nach jedem Pull automatisch neu** (wie HUMig/AdminTool), auch bei manuellem
+  Aufruf von Pull.ps1. Laeuft der Pull als Admin, startet das Tool direkt (keine zweite
+  UAC-Abfrage), sonst ueber Start.vbs. Abschaltbar mit `-NoStart`.
+
 ### Behoben
 - **Erstinstallation landete im unsichtbaren Desktop-Ordner** bei OneDrive-Desktop-Umleitung:
   Pull.ps1 nutzt jetzt den echten Desktop (`[Environment]::GetFolderPath('Desktop')`)
