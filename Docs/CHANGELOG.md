@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.2.4 (2026-10-02)
+
+### Neu
+- **Auswertung im Clients-Reiter** unter der Liste, je Rolle: wie viele Clients auf dem
+  aktuellen Stand sind (hoechste Zielversion im Share) und wie viele auf welcher anderen
+  Version bzw. nicht installiert, z.B.
+  `Student: 25 von 28 aktuell (2.1.0.3) - 2x 2.1.0.2, 1x nicht installiert`.
+  Gruen = alle aktuell, orange = Abweichungen.
+
 ## v3.2.3 (2026-10-02)
 
 ### Behoben
