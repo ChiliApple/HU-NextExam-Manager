@@ -374,12 +374,18 @@
                     </GroupBox>
 
 
-                    <GroupBox Header="Clients (Status aus Status-Share der Tasks)" Grid.Row="3">
+                    <GroupBox Grid.Row="3">
+                        <GroupBox.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Clients (Status aus Status-Share der Tasks)"/>
+                                <TextBlock x:Name="lblClientSummary" Margin="14,0,0,0" FontWeight="SemiBold" Foreground="#C0C0C0"
+                                           ToolTip="Auswertung der angezeigten Clients je Rolle: wie viele auf dem aktuellen Stand (hoechste Zielversion im Share), wie viele auf welcher anderen Version"/>
+                            </StackPanel>
+                        </GroupBox.Header>
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid Grid.Row="0" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
@@ -407,8 +413,6 @@
                                     </GridView>
                                 </ListView.View>
                             </ListView>
-                            <TextBlock x:Name="lblClientSummary" Grid.Row="2" Margin="2,6,0,0" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#C0C0C0"
-                                       ToolTip="Auswertung der angezeigten Clients: wie viele auf dem aktuellen Stand (hoechste Zielversion im Share) und wie viele auf welcher anderen Version"/>
                         </Grid>
                     </GroupBox>
 
