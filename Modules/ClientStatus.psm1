@@ -242,13 +242,22 @@ function Clear-ClientStatus {
         Gibt Anzahl geloeschter/fehlgeschlagener Dateien + Fehlermeldungen zurueck.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Path)
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        # Optional: nur diese Dateien loeschen (gemeinsamer Status-Share mehrerer Tasks). Nur Dateien IN $Path werden angefasst.
+        [string[]]$Files
+    )
 
     $result = [PSCustomObject]@{ Deleted = 0; Failed = 0; Errors = @() }
     if (-not (Test-Path $Path)) { return $result }
 
-    $files = Get-ChildItem -Path $Path -Filter '*.json' -File -ErrorAction SilentlyContinue
-    foreach ($f in $files) {
+    $jsonFiles = @(Get-ChildItem -Path $Path -Filter '*.json' -File -ErrorAction SilentlyContinue)
+    if ($PSBoundParameters.ContainsKey('Files')) {
+        $want = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+        foreach ($x in @($Files)) { if ($x) { [void]$want.Add([System.IO.Path]::GetFileName($x)) } }
+        $jsonFiles = @($jsonFiles | Where-Object { $want.Contains($_.Name) })
+    }
+    foreach ($f in $jsonFiles) {
         try {
             Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop
             $result.Deleted++

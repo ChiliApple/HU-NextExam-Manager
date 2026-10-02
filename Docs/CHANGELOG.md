@@ -1,5 +1,16 @@
 # Changelog
 
+## v3.2.2 (2026-10-02)
+
+### Behoben
+- **Clients-Status zeigte bei gemeinsamem Status-Share alle Schulen** (z.B. BHAK + BORG
+  Eisenerz auf demselben Schulserver): Nutzen mehrere Tasks denselben Status-Share, zeigt
+  der Clients-Reiter pro Task nur Rechner aus den AD-OUs des Tasks (Student- + Teacher-OU,
+  Abfrage per Get-ADComputer gegen den DC des Tasks, 10 min Cache, "Aktualisieren" leert ihn).
+  "Aufraeumen" loescht dann nur die Eintraege dieses Tasks; ist die AD-Abfrage nicht
+  moeglich, wird nicht gefiltert bzw. das Aufraeumen abgebrochen. Tasks mit eigenem
+  Status-Share: unveraendert.
+
 ## v3.2.1 (2026-10-02)
 
 ### Geaendert

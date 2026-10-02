@@ -108,7 +108,7 @@ function Show-Console {
 }
 
 # --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.2.1'
+$script:ToolVersion = '3.2.2'
 
 # --- Pfade ---
 $script:RootPath    = $PSScriptRoot
@@ -3093,6 +3093,55 @@ $script:btnClientRefresh = Get-UI 'btnClientRefresh'
 $script:lstClients       = Get-UI 'lstClients'
 $script:btnClientClear   = Get-UI 'btnClientClear'
 
+# Mehrere Tasks mit demselben Status-Share (z.B. BHAK + BORG Eisenerz, gemeinsamer Schulserver):
+# Die Status-JSONs enthalten keinen Task -> pro Task nur Rechner aus den AD-OUs dieses Tasks anzeigen.
+$script:ClientOuCache = @{}
+function Get-NEMNormPath([string]$P) { return ("$P".Trim().TrimEnd('\')).ToLower() }
+function Test-NEMSharedStatusPath($Task) {
+    $p = Get-NEMNormPath $Task.StatusSharePath
+    if (-not $p) { return $false }
+    return (@($script:Config.Tasks | Where-Object { $_.Id -ne $Task.Id -and (Get-NEMNormPath $_.StatusSharePath) -eq $p }).Count -gt 0)
+}
+# Rechnernamen aus Student- + Teacher-OU des Tasks (10 min Cache). Rueckgabe: @{ Names = HashSet; Err = '' }
+function Get-NEMTaskComputerNames($Task) {
+    $key = "$($Task.Id)"
+    $c = $script:ClientOuCache[$key]
+    if ($c -and ((Get-Date) - $c.Time).TotalMinutes -lt 10) { return $c }
+    $names = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $err = ''
+    $ous = @($Task.OUTargetStudent, $Task.OUTargetTeacher | Where-Object { "$_".Trim() } | Select-Object -Unique)
+    if (-not $ous.Count) { $err = 'keine Student-/Teacher-OU im Task' }
+    else {
+        try {
+            Import-Module ActiveDirectory -ErrorAction Stop -Verbose:$false | Out-Null
+            $srv = $(if ("$($Task.DCServer)".Trim()) { "$($Task.DCServer)".Trim() } else { "$($Task.DomainFQDN)".Trim() })
+            foreach ($ou in $ous) {
+                $p = @{ Filter = '*'; SearchBase = $ou; SearchScope = 'Subtree'; ErrorAction = 'Stop' }
+                if ($srv) { $p.Server = $srv }
+                foreach ($co in @(Get-ADComputer @p)) { [void]$names.Add("$($co.Name)") }
+            }
+        } catch { $err = "AD-Abfrage fehlgeschlagen: $($_.Exception.Message)" }
+    }
+    $r = @{ Names = $names; Err = $err; Time = Get-Date }
+    if (-not $err) { $script:ClientOuCache[$key] = $r }
+    return $r
+}
+# Status-Zeilen des Tasks (bei gemeinsamem Status-Share nach OU gefiltert)
+function Get-NEMTaskClientRows($Task) {
+    $rows = @(Read-ClientStatus -Path $Task.StatusSharePath)
+    $info = [pscustomobject]@{ Rows = $rows; Shared = $false; Total = $rows.Count; Err = '' }
+    if (-not (Test-NEMSharedStatusPath $Task)) { return $info }
+    $info.Shared = $true
+    $ad = Get-NEMTaskComputerNames $Task
+    if ($ad.Err) { $info.Err = $ad.Err; return $info }
+    $info.Rows = @($rows | Where-Object {
+        $n = "$($_.ComputerName)"
+        if ("$($_.Role)" -eq '-') { $n = $n -replace '-(Student|Teacher)$', '' }   # Parse-Fehler-Zeile: Name aus Dateiname
+        $ad.Names.Contains($n)
+    })
+    return $info
+}
+
 function Refresh-ClientsList {
     $t = $script:cmbClientTask.SelectedItem
     if (-not $t) { $script:lstClients.ItemsSource = @(); $script:lblClientShare.Text = ''; return }
@@ -3101,10 +3150,12 @@ function Refresh-ClientsList {
         $script:lblClientShare.Text = '(Kein Status-Share konfiguriert - siehe Settings)'
         return
     }
-    $script:lblClientShare.Text = $t.StatusSharePath
     try {
-        $rows = Read-ClientStatus -Path $t.StatusSharePath
-        $script:lstClients.ItemsSource = @($rows)
+        $i = Get-NEMTaskClientRows $t
+        $script:lstClients.ItemsSource = @($i.Rows)
+        if (-not $i.Shared) { $script:lblClientShare.Text = $t.StatusSharePath }
+        elseif ($i.Err) { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, NICHT gefiltert ($($i.Err))" }
+        else { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, gefiltert nach AD-OUs: $(@($i.Rows).Count) von $($i.Total)" }
     } catch {
         $script:lblClientShare.Text = "Fehler: $_"
     }
@@ -3129,6 +3180,7 @@ function Refresh-ClientTaskDropdown {
 
 $script:cmbClientTask.Add_SelectionChanged({ Refresh-ClientsList })
 $script:btnClientRefresh.Add_Click({
+    $script:ClientOuCache = @{}
     Show-LoadingOverlay
     try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
     try { Refresh-ClientsList } finally { Hide-LoadingOverlay }
@@ -3139,15 +3191,26 @@ $script:btnClientClear.Add_Click({
         [System.Windows.MessageBox]::Show('Kein Task / Status-Share ausgewaehlt.', 'Status aufraeumen', 'OK', 'Warning') | Out-Null
         return
     }
+    $files = $null
+    $what = 'Alle Status-Eintraege dieses Shares'
+    if (Test-NEMSharedStatusPath $t) {
+        $i = Get-NEMTaskClientRows $t
+        if ($i.Err) {
+            [System.Windows.MessageBox]::Show("Der Status-Share wird von mehreren Tasks genutzt, die Rechner dieses Tasks konnten aber nicht ermittelt werden:`n`n$($i.Err)`n`nAufraeumen abgebrochen (sonst wuerden auch die Eintraege der anderen Schule geloescht).", 'Status aufraeumen', 'OK', 'Warning') | Out-Null
+            return
+        }
+        $files = @($i.Rows | ForEach-Object { $_.File } | Where-Object { $_ })
+        $what = "Die $($files.Count) Status-Eintraege von $($t.DisplayName) (Rechner aus den Task-OUs; Eintraege anderer Tasks im selben Share bleiben)"
+    }
     $answer = [System.Windows.MessageBox]::Show(
-        "Alle Status-Eintraege dieses Shares wirklich loeschen?`n`nShare: $($t.StatusSharePath)`n`nDie Clients legen ihren Status beim naechsten Start automatisch neu an.",
+        "$what wirklich loeschen?`n`nShare: $($t.StatusSharePath)`n`nDie Clients legen ihren Status beim naechsten Start automatisch neu an.",
         "Status aufraeumen - $($t.DisplayName)", 'YesNo', 'Warning')
     if ($answer -ne 'Yes') { return }
 
     Show-LoadingOverlay
     try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
     try {
-        $res = Clear-ClientStatus -Path $t.StatusSharePath
+        $res = if ($null -ne $files) { Clear-ClientStatus -Path $t.StatusSharePath -Files $files } else { Clear-ClientStatus -Path $t.StatusSharePath }
         Refresh-ClientsList
         $msg = "$($res.Deleted) Datei(en) geloescht"
         if ($res.Failed -gt 0) { $msg += ", $($res.Failed) fehlgeschlagen" }
