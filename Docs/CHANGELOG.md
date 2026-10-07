@@ -3,8 +3,8 @@
 ## v3.2.3 (2026-10-02)
 
 ### Behoben
-- **Clients-Status zeigte bei gemeinsamem Status-Share alle Schulen** (z.B. BHAK + BORG
-  Eisenerz auf demselben Schulserver): Nutzen mehrere Tasks denselben Status-Share, zeigt
+- **Clients-Status zeigte bei gemeinsamem Status-Share alle Schulen** (z.B. zwei
+  Schulen auf demselben Schulserver): Nutzen mehrere Tasks denselben Status-Share, zeigt
   der Clients-Reiter pro Task nur dessen Rechner: alle Computer unter den OUs (bzw. der
   Domaene), an denen die Install-GPOs des Tasks verknuepft sind (gPLink) - unabhaengig von
   den im Task eingetragenen OUs. Nur wenn keine Verknuepfung gefunden wird, gelten die

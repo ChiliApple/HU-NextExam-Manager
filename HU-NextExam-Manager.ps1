@@ -2357,7 +2357,7 @@ function Refresh-MDMTenantList {
 }
 
 $script:btnMDMTenantAdd.Add_Click({
-    $name = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-Name (z.B. Gym-Leoben):', 'MDM-Tenant hinzufuegen', '')
+    $name = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-Name (z.B. Schule-A):', 'MDM-Tenant hinzufuegen', '')
     if (-not $name) { return }
     $tid = [Microsoft.VisualBasic.Interaction]::InputBox('Tenant-ID (Directory ID aus Azure Portal):', 'MDM-Tenant hinzufuegen', '')
     if (-not $tid) { return }
@@ -3093,7 +3093,7 @@ $script:btnClientRefresh = Get-UI 'btnClientRefresh'
 $script:lstClients       = Get-UI 'lstClients'
 $script:btnClientClear   = Get-UI 'btnClientClear'
 
-# Mehrere Tasks mit demselben Status-Share (z.B. BHAK + BORG Eisenerz, gemeinsamer Schulserver):
+# Mehrere Tasks mit demselben Status-Share (z.B. zwei Schulen auf einem gemeinsamen Schulserver):
 # Die Status-JSONs enthalten keinen Task -> pro Task nur Rechner aus den AD-OUs dieses Tasks anzeigen.
 $script:ClientOuCache = @{}
 function Get-NEMNormPath([string]$P) { return ("$P".Trim().TrimEnd('\')).ToLower() }

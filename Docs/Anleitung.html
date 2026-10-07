@@ -168,7 +168,7 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><th style="width:260px">Feld</th><th>Bedeutung</th></tr>
     <tr><td><b>Anzeigename</b></td><td>Name des Tasks in allen Listen.</td></tr>
     <tr><td><b>Domain FQDN</b></td><td>z. B. <code>schule.local</code>.</td></tr>
-    <tr><td><b>DC Server (Hostname oder IP)</b></td><td>Domänencontroller für alle GPO-Operationen. <b>Den vollqualifizierten Namen eintragen</b> (z. B. <code>DC1.schule.intern</code>) – mit Kurzname oder IP kann der SYSVOL-Zugriff scheitern (siehe <a href="#fehler">Fehlerbehebung</a>).</td></tr>
+    <tr><td><b>DC Server (Hostname oder IP)</b></td><td>Domänencontroller für alle GPO-Operationen. <b>Den vollqualifizierten Namen eintragen</b> (z. B. <code>DC1.schule.local</code>) – mit Kurzname oder IP kann der SYSVOL-Zugriff scheitern (siehe <a href="#fehler">Fehlerbehebung</a>).</td></tr>
     <tr><td><b>Student-Share (UNC)</b> / <b>Teacher-Share (UNC)</b></td><td>Ablage der MSIs, z. B. <code>\\FILESRV\install\NEXT-EXAM\Student</code>. <span class="ui">...</span> öffnet die Ordnerauswahl. Clients brauchen Leserecht, Schreibrecht nur Admins.</td></tr>
     <tr><td><b>Status-Share (Client-Feedback) - UNC</b></td><td>Optional. Clients schreiben nach jeder Prüfung eine kleine JSON-Datei hinein. Vorschlag: <code>&lt;übergeordneter Ordner des Student-Shares&gt;\_status</code>. <span class="ui">Anlegen + ACL</span> legt den Ordner an und setzt die Rechte – siehe <a href="#clients">Clients-Status</a>. Leer = kein Client-Feedback.</td></tr>
     <tr><td><b>OU-Ziel Student</b> / <b>OU-Ziel Teacher</b></td><td>OU als <b>DistinguishedName</b>, z. B. <code>OU=Workstations,OU=EDV,DC=schule,DC=local</code>. Hierhin werden Install- und Firewall-GPOs verknüpft.</td></tr>
@@ -371,7 +371,7 @@ cd $d; .\Pull.ps1</pre></li>
   <h3 id="e80070005">Install-GPOs / FW-GPOs: „Zugriff verweigert (0x80070005)“</h3>
   <p>Typisch: Löschen und WMI-Filter funktionieren, alles mit SYSVOL-Anteil nicht. Zwei bekannte Ursachen – jeweils <b>auf dem Rechner prüfen, auf dem das Tool läuft</b>:</p>
   <ol class="steps">
-    <li><b>DC als Kurzname oder IP eingetragen.</b> SYSVOL ist von manchen Servern nur über den FQDN des DCs erreichbar. In <span class="ui">Settings</span> › Task › <b>DC Server</b> den FQDN eintragen (z. B. <code>DC1.schule.intern</code> statt <code>DC1</code>) und speichern. Test: <code>Get-GPO -All -Server DC1.schule.intern</code> gegen <code>-Server DC1</code>.</li>
+    <li><b>DC als Kurzname oder IP eingetragen.</b> SYSVOL ist von manchen Servern nur über den FQDN des DCs erreichbar. In <span class="ui">Settings</span> › Task › <b>DC Server</b> den FQDN eintragen (z. B. <code>DC1.schule.local</code> statt <code>DC1</code>) und speichern. Test: <code>Get-GPO -All -Server DC1.schule.local</code> gegen <code>-Server DC1</code>.</li>
     <li><b>Veralteter DNS-Eintrag der Domäne.</b> <code>nslookup &lt;domäne&gt;</code> – liefert es mehr Adressen als es DCs gibt, zeigt ein Eintrag auf einen Nicht-DC, und <code>\\&lt;domäne&gt;\SYSVOL</code> läuft zeitweise ins Leere. Den falschen A-Eintrag am Zonen-Stamm im DNS löschen.</li>
   </ol>
   <p>Erscheint die Meldung beim Aktualisieren einer bestehenden Install-GPO (Datei mit anderem Besitzer aus einem früheren Lauf), bietet das Tool an, <b>nur diese eine GPO</b> zu löschen und neu anzulegen. Ihre OU-Verknüpfungen müssen danach mit <span class="ui">Mit OU verknuepfen</span> neu gesetzt werden.</p>

@@ -783,8 +783,8 @@ function Invoke-NextExamGpoMigration {
     .PARAMETER WhatIf
         Nur anzeigen, was migriert wuerde - keine Aenderung.
     .EXAMPLE
-        Invoke-NextExamGpoMigration -DomainFQDN schule.intern -WhatIf
-        Invoke-NextExamGpoMigration -DomainFQDN schule.intern | Format-Table
+        Invoke-NextExamGpoMigration -DomainFQDN schule.local -WhatIf
+        Invoke-NextExamGpoMigration -DomainFQDN schule.local | Format-Table
     #>
     [CmdletBinding()]
     param(
