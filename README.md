@@ -1,44 +1,58 @@
-# HU-NextExam-Manager <img src="Assets/crane_check_icon.png" alt="Logo" width="48" align="top"/>
+<h1 align="center"><img src="Assets/crane_check_icon.png" width="44" alt="" align="absmiddle"/> HU-NextExam-Manager</h1>
 
-[![Lizenz: Nutzung frei](https://img.shields.io/badge/Lizenz-Nutzung%20frei-orange.svg)](LICENSE)
-[![CI](https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml/badge.svg)](https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml)
-[![PowerShell 5.1](https://img.shields.io/badge/PowerShell-5.1-blue.svg)](https://docs.microsoft.com/en-us/powershell/)
-[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d7.svg)](https://www.microsoft.com/windows)
-[![Release](https://img.shields.io/github/v/release/ChiliApple/HU-NextExam-Manager)](https://github.com/ChiliApple/HU-NextExam-Manager/releases)
-[![Downloads](https://img.shields.io/github/downloads/ChiliApple/HU-NextExam-Manager/total)](https://github.com/ChiliApple/HU-NextExam-Manager/releases)
+<p align="center"><b>Next-Exam automatisch verteilen – per GPO im Active Directory und per Intune</b><br>
+Neue Versionen laden, auf die Shares legen, Install- und Firewall-GPOs mit WMI-Filtern anlegen –<br>
+oder als Win32-App über Microsoft Graph in Intune verteilen. Einmal eingerichtet, läuft der Rest täglich von selbst.</p>
 
-WPF-Tool (PowerShell 5.1) für die automatische Verteilung und Verwaltung von
-[Next-Exam](https://github.com/Bildungsportal/next-exam) in Active-Directory-Umgebungen
-und via Intune/MDM (Microsoft Graph API).
+<p align="center">
+  <a href="https://github.com/ChiliApple/HU-NextExam-Manager/releases/latest"><img src="https://img.shields.io/github/v/release/ChiliApple/HU-NextExam-Manager?label=Version&color=b9a88a" alt="Version"></a>
+  <img src="https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white" alt="PowerShell 5.1">
+  <img src="https://img.shields.io/badge/Windows%20Server-2016%2B%20%7C%20RSAT-0078D6" alt="Windows Server 2016+ | RSAT">
+  <img src="https://img.shields.io/badge/Intune-Microsoft%20Graph-2E7D32" alt="Intune / Microsoft Graph">
+  <img src="https://img.shields.io/badge/Oberfl%C3%A4che-WPF-8839ef" alt="WPF">
+  <a href="https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml"><img src="https://github.com/ChiliApple/HU-NextExam-Manager/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-Nutzung%20frei-orange" alt="Lizenz"></a>
+</p>
+
+<p align="center">
+  <a href="https://chiliapple.github.io/HU-NextExam-Manager/Docs/Anleitung.html"><b>Anleitung</b></a> ·
+  <a href="Docs/INSTALL.md">Installation</a> ·
+  <a href="Docs/MDM-Setup.md">MDM-Setup</a> ·
+  <a href="Docs/CHANGELOG.md">Änderungen</a> ·
+  <a href="LICENSE">Lizenz</a>
+</p>
 
 ---
 
-## Screenshots
+| | |
+|---|---|
+| **MSI Pull** | offizielle [Next-Exam](https://github.com/Bildungsportal/next-exam)-Releases (Student + Teacher) laden, auf die Shares legen, alte Versionen in `_archive\` (letzte 3) |
+| **GPO Setup** | Install-GPOs (Startup-Script mit Versions-Check) + Firewall-GPOs, **WMI-Filter** für Student/Teacher in derselben OU, Verknüpfung mit den OUs |
+| **MDM Deploy** | Win32-App über **Microsoft Graph** in Intune – App-Registrierung per Assistent, Paketierung, Upload, Gruppen-Zuweisung, Versions-Vergleich |
+| **Auto-Pull** | geplante Aufgabe täglich (SYSTEM oder Benutzer) – neue Next-Exam-Version kommt ohne Zutun auf die Shares |
+| **Client-Status** | Clients melden installierte Version zurück – Übersicht je Task im **Dashboard**, mit Aufräumen |
+| **Mehrere Schulen** | mehrere Tasks pro Server (Domäne, Shares, OUs, Filter), portable Konfiguration |
+| **Update** | Kanal **Stabil** oder **Test**, Vorversion per Klick, jede Datei per **SHA-256** geprüft, nur **signierte** Releases werden installiert |
+| **Anleitung** | im Tool mit **F1** oder Knopf **Anleitung** – immer aktuell aus diesem Repository |
 
-| Dashboard | MDM Deploy (Intune) |
-|:-:|:-:|
-| ![Dashboard](Docs/screenshots/dashboard.png) | ![MDM](Docs/screenshots/mdm.png) |
+<table>
+  <tr>
+    <td align="center"><a href="Docs/screenshots/dashboard.png"><img src="Docs/screenshots/dashboard.png" width="390" alt="Dashboard"/></a><br><sub>Dashboard</sub></td>
+    <td align="center"><a href="Docs/screenshots/mdm.png"><img src="Docs/screenshots/mdm.png" width="390" alt="MDM Deploy"/></a><br><sub>MDM Deploy (Intune)</sub></td>
+  </tr>
+</table>
 
----
+## Schnellstart
 
-## Was macht das Tool?
+1. `Pull.ps1` in einen leeren Ordner legen und als Domain-Admin ausführen (Befehl unter [Bootstrap-Install](#bootstrap-install))
+2. **Start.vbs** starten (UAC bestätigen)
+3. **Settings** → Task anlegen → **MSI Pull** → **GPO Setup** – Details im [Erst-Setup](#erst-setup)
 
-In einer typischen Schulumgebung braucht jede Next-Exam-Version manuelle Arbeit:
-MSI herunterladen, auf Shares kopieren, GPOs pflegen, Firewall-Regeln setzen,
-WMI-Filter konfigurieren. Das Tool automatisiert den gesamten Prozess — einmal
-konfiguriert, läuft der Rest täglich automatisch per Scheduled Task.
+Details: [Docs/INSTALL.md](Docs/INSTALL.md) und die [Anleitung](https://chiliapple.github.io/HU-NextExam-Manager/Docs/Anleitung.html) (im Tool mit **F1**).
 
-## Funktionen
+**Inhalt:** [Installation](#installation) · [Die Oberfläche](#die-oberfläche) · [Erst-Setup](#erst-setup) · [WMI-Filter](#wmi-filter-konfigurieren-beispiel) · [Auto-Pull](#auto-pull-automatisieren) · [Client-Status](#client-status) · [Repo-Struktur](#repo-struktur) · [Known Issues](#known-issues--manuelle-nacharbeit) · [Lizenz](#lizenz)
 
-- MSI-Download vom offiziellen Next-Exam GitHub-Release (Student + Teacher)
-- Share-Management mit automatischer Archivierung alter Versionen
-- GPO-Erstellung: Install-GPOs (Startup-Script) + Firewall-GPOs
-- WMI-Filter für Student/Teacher-Trennung in derselben OU
-- Auto-Pull per Scheduled Task (täglich, unattended)
-- MDM-Deployment: Win32 LOB App via Intune (Microsoft Graph API)
-- Entra ID App Registration per In-App Setup-Wizard
-- Dashboard mit Ampel-Status, Client-Übersicht und MDM-Widget
-- Self-Update, Log-Viewer, Multi-Task-Konfiguration, portable Config
+> **Inoffizielles Drittanbieter-Tool** – kein Produkt des Next-Exam-Projekts. Hinweise: [Docs/NOTICE.md](Docs/NOTICE.md).
 
 ---
 
@@ -100,7 +114,7 @@ und startet das Tool neu. Oder manuell `.\Pull.ps1` ausführen (Tool vorher schl
   Herausgebers zusätzlich *Release signieren* / *Release freigeben*.
 - Kommandozeile für den Herausgeber: `Tools\Sign-NextExamRelease.ps1`.
 
-**Anleitung:** Knopf **Anleitung** oben rechts (oder `F1`) – lädt `Docs/Anleitung.html`
+**[Anleitung](https://chiliapple.github.io/HU-NextExam-Manager/Docs/Anleitung.html):** Knopf **Anleitung** oben rechts (oder `F1`) – lädt `Docs/Anleitung.html`
 immer aktuell von GitHub.
 
 ---
