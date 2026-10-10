@@ -24,8 +24,10 @@
       - Dateien, die es im neuen Stand nicht mehr gibt, werden entfernt - nur solche, die frueher per Pull installiert wurden
         (Liste in installed.json). Eigene Dateien und die Ordner Config\ und Logs\ bleiben immer unberuehrt.
 
-    Lokale Daten bleiben unangetastet: config.json, update.json, installed.json, Config\, Logs\, HU-NextExam-Manager.exe (Starter).
-    GitHub-Token (optional, nur fuer mehr API-Aufrufe/h): config.json > ToolSettings.GitHubToken.
+    Lokale Daten bleiben unangetastet: Config\ (config.json, update.json, installed.json, github-token.dat), Logs\,
+    HU-NextExam-Manager.exe (Starter). Alte Dateien im Tool-Ordner (vor v3.4.0) werden nach Config\ verschoben.
+    GitHub-Token (optional, nur fuer mehr API-Aufrufe/h): Config\github-token.dat (das Tool uebernimmt ihn aus
+    config.json > ToolSettings.GitHubToken).
 .NOTES
     Manuell: powershell -ExecutionPolicy Bypass -File Pull.ps1 [-Version 3.2.0] [-Channel Test] [-NoStart]
     Nach dem Update wird das Tool automatisch gestartet (ausser -NoStart).
@@ -225,9 +227,17 @@ if (Test-Path -LiteralPath $jr) {
     Remove-Item -LiteralPath $jr -Force -ErrorAction SilentlyContinue
 }
 
-# --- Update-Einstellungen (update.json im Tool-Ordner)
-$cfgDir = $Target
-$cfg = Get-HMUpdateConfig $cfgDir
+# --- Daten liegen ab v3.4.0 in Config\ (config.json, update.json, installed.json); Verschieben erst, wenn das Tool beendet ist
+$cfgDir = Join-Path $Target 'Config'
+# Pfad einer Datendatei: Config\<Name>, nur falls dort keine liegt aber noch die alte im Tool-Ordner diese
+function Get-PullDataFile([string]$Name) {
+    $n = Join-Path $cfgDir $Name; $o = Join-Path $Target $Name
+    if (-not (Test-Path -LiteralPath $n -PathType Leaf) -and (Test-Path -LiteralPath $o -PathType Leaf)) { return $o }
+    return $n
+}
+
+# --- Update-Einstellungen (Config\update.json)
+$cfg = Get-HMUpdateConfig (Split-Path -Parent (Get-PullDataFile 'update.json'))
 if (-not $Owner) { $Owner = $cfg.Owner }
 if (-not $Repo)  { $Repo = $cfg.Repo }
 # andere Quelle per Parameter: eingebauter Fingerabdruck gilt nur fuer die offizielle Quelle
@@ -240,9 +250,17 @@ if (-not $Channel) { $Channel = $cfg.Channel }
 $useBranch = [bool]$Branch -or ($cfg.UseBranch -and -not $Version)
 if (-not $Branch) { $Branch = $cfg.Branch }
 
-# --- optionaler Token aus config.json (nur Rate-Limit: 5000 statt 60 API-Aufrufe/h) bzw. Umgebungsvariable (CI)
+# --- optionaler Token (nur Rate-Limit: 5000 statt 60 API-Aufrufe/h): Umgebungsvariable (CI),
+#     Config\github-token.dat (verschluesselt, nur Administratoren/SYSTEM) bzw. noch nicht uebernommen in config.json
 $Token = "$env:HUNEM_GITHUB_TOKEN".Trim()
-$cfgPath = Join-Path $Target 'config.json'
+$tokFile = Join-Path $cfgDir 'github-token.dat'
+if (-not $Token -and (Test-Path -LiteralPath $tokFile -PathType Leaf)) {
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+        $Token = [System.Text.Encoding]::UTF8.GetString([System.Security.Cryptography.ProtectedData]::Unprotect([System.IO.File]::ReadAllBytes($tokFile), [System.Text.Encoding]::UTF8.GetBytes('HU-NextExam-Manager GitHubToken'), 'LocalMachine')).Trim()
+    } catch { $Token = '' }
+}
+$cfgPath = Get-PullDataFile 'config.json'
 if (-not $Token -and (Test-Path -LiteralPath $cfgPath)) {
     try { $tc = Get-Content -LiteralPath $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json; if ($tc.ToolSettings.GitHubToken) { $Token = "$($tc.ToolSettings.GitHubToken)".Trim() } } catch { }
 }
@@ -270,6 +288,22 @@ try {
     $probe = Join-Path $Target ('.pullprobe_' + [Guid]::NewGuid().ToString('N'))
     [System.IO.File]::WriteAllText($probe, 'x'); Remove-Item $probe -Force
 } catch { Stop-HMPull "Kein Schreibzugriff auf '$Target'. PowerShell als Administrator starten oder Ordnerrechte setzen." }
+
+# --- alte Datendateien aus dem Tool-Ordner nach Config\ (ab v3.4.0; das Tool ist jetzt beendet)
+#     Liegen beide vor (Wechsel auf eine aeltere Version und zurueck), gilt die zuletzt geaenderte, die andere bleibt als *.alt
+foreach ($dn in @('config.json', 'update.json', 'installed.json')) {
+    $dOld = Join-Path $Target $dn
+    $dNew = Join-Path $cfgDir $dn
+    if (-not (Test-Path -LiteralPath $dOld -PathType Leaf)) { continue }
+    try {
+        if (-not (Test-Path -LiteralPath $cfgDir -PathType Container)) { New-Item -ItemType Directory -Path $cfgDir -Force -ErrorAction Stop | Out-Null }
+        if (-not (Test-Path -LiteralPath $dNew -PathType Leaf)) { Move-Item -LiteralPath $dOld -Destination $dNew -ErrorAction Stop }
+        elseif ((Get-Item -LiteralPath $dOld -Force).LastWriteTimeUtc -gt (Get-Item -LiteralPath $dNew -Force).LastWriteTimeUtc) {
+            Move-Item -LiteralPath $dNew -Destination "$dOld.alt" -Force -ErrorAction Stop; Move-Item -LiteralPath $dOld -Destination $dNew -Force -ErrorAction Stop
+        } else { Move-Item -LiteralPath $dOld -Destination "$dOld.alt" -Force -ErrorAction Stop }
+        Write-Host "  Migration: $dn -> Config\$dn" -ForegroundColor DarkGray
+    } catch { Write-Host "  [WARN] $dn nicht nach Config\ verschiebbar: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
 
 function New-GHHeaders([string]$Accept) {
     $h = @{ Accept = $Accept; 'User-Agent' = 'HU-NextExam-Manager-Pull' }
@@ -435,7 +469,7 @@ $ok = $moved.Count
 # --- 6. Dateien entfernen, die es im neuen Stand nicht mehr gibt - nur solche, die frueher per Pull installiert wurden
 #        (Liste in installed.json). Eigene Dateien und die Datenordner bleiben immer unberuehrt.
 $newFiles = @($files | ForEach-Object { "$($_.path)" })
-$instFile = Join-Path $cfgDir 'installed.json'
+$instFile = Get-PullDataFile 'installed.json'
 $prevFiles = @()
 try { if (Test-Path -LiteralPath $instFile) { $pi = Get-Content -LiteralPath $instFile -Raw -Encoding UTF8 | ConvertFrom-Json; if ($pi.PSObject.Properties['FileList']) { $prevFiles = @($pi.FileList) } } } catch { }
 $removedOld = 0
@@ -470,6 +504,17 @@ try {
         Check = $verified; Date = (Get-Date).ToString('yyyy-MM-dd HH:mm'); Files = $ok; FileList = $newFiles
     } | ConvertTo-Json | Set-Content -LiteralPath $instFile -Encoding UTF8
 } catch { }
+# Wechsel auf eine Version vor 3.4.0: die liest ihre Daten noch aus dem Tool-Ordner -> dorthin kopieren (Config\ bleibt)
+$relVer = $null
+if (-not $useBranch) { try { $relVer = [version](("$($rel.Version)" -replace '^v', '') -replace '-.*$', '') } catch { $relVer = $null } }
+if ($relVer -and $relVer -lt [version]'3.4.0') {
+    foreach ($dn in @('config.json', 'update.json', 'installed.json')) {
+        $dNew = Join-Path $cfgDir $dn
+        if (Test-Path -LiteralPath $dNew -PathType Leaf) {
+            try { Copy-Item -LiteralPath $dNew -Destination (Join-Path $Target $dn) -Force -ErrorAction Stop; Write-Host "  aeltere Version: $dn in den Tool-Ordner kopiert" -ForegroundColor DarkGray } catch { }
+        }
+    }
+}
 Write-Host "`n=== Pull fertig === $ok Dateien ($verified)$(if ($removedOld) { " | $removedOld alte entfernt" })" -ForegroundColor Cyan
 
 

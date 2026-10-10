@@ -51,7 +51,12 @@ function Write-Log {
     }
 }
 
+# Aktuelle Einstellungen (fuer Hintergrund-Runspaces, die das Modul neu laden)
+function Get-LogSettings {
+    [pscustomobject]@{ Path = $script:LogFile; Level = $script:LogLevel }
+}
+
 # Funktionen exportieren (nur wenn als Modul geladen; bei dot-source automatisch sichtbar)
 if ($ExecutionContext.SessionState.Module) {
-Export-ModuleMember -Function Initialize-Log, Write-Log
+Export-ModuleMember -Function Initialize-Log, Write-Log, Get-LogSettings
 }

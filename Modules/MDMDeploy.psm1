@@ -47,7 +47,8 @@ function Save-MDMCredential {
     param(
         [Parameter(Mandatory)][string]$TenantId,
         [Parameter(Mandatory)][string]$ClientId,
-        [Parameter(Mandatory)][string]$ClientSecret
+        [Parameter(Mandatory)][string]$ClientSecret,
+        [string]$KeyId = ''   # keyId des Secrets in Entra (zum gezielten Entfernen beim naechsten Neu-Erstellen)
     )
     if (-not (Test-Path $script:CredBasePath)) {
         New-Item -ItemType Directory -Path $script:CredBasePath -Force | Out-Null
@@ -56,6 +57,7 @@ function Save-MDMCredential {
         TenantId = $TenantId
         ClientId = $ClientId
     }
+    if ($KeyId) { $obj['KeyId'] = $KeyId }
     # DPAPI-Verschluesselung des Secrets (CurrentUser-Scope)
     $secretBytes = [System.Text.Encoding]::UTF8.GetBytes($ClientSecret)
     $encBytes    = [System.Security.Cryptography.ProtectedData]::Protect(
@@ -93,6 +95,7 @@ function Load-MDMCredential {
             TenantId     = $obj.TenantId
             ClientId     = $obj.ClientId
             ClientSecret = $secret
+            KeyId        = "$($obj.KeyId)"
         }
     } catch {
         Write-Log "MDM-Credentials entschluesseln fehlgeschlagen ($path): $_" -Level ERROR -Source 'MDM'
@@ -801,6 +804,63 @@ function Get-NextExamIntuneApp {
     return $result
 }
 
+# MSI-Eigenschaften lesen (Windows Installer, nur lesend): ProductCode, ProductVersion, UpgradeCode ...
+function Get-NEMMsiProperties {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    $inst = $null; $db = $null
+    $res = @{}
+    try {
+        $inst = New-Object -ComObject WindowsInstaller.Installer
+        $db = $inst.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $inst, @($Path, 0))   # 0 = nur lesen
+        foreach ($name in 'ProductCode', 'ProductVersion', 'UpgradeCode', 'ProductName', 'Manufacturer') {
+            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db, @("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$name'"))
+            try {
+                [void]$view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+                $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+                if ($rec) {
+                    $res[$name] = "$($rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, @(1)))"
+                    [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($rec)
+                }
+            } finally {
+                try { [void]$view.GetType().InvokeMember('Close', 'InvokeMethod', $null, $view, $null) } catch { }
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($view)
+            }
+        }
+    } finally {
+        if ($db) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($db) }
+        if ($inst) { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($inst) }
+    }
+    [pscustomobject]$res
+}
+
+# Erkennungsregel: MSI-ProductCode + Version >= (erkennt veraltete Installationen -> Intune aktualisiert sie).
+# Nur "Datei vorhanden" wuerde jede alte Version als installiert melden - das Update kaeme nie an.
+function New-NEMDetectionRules {
+    param([hashtable]$AppMetadata)
+    if ($AppMetadata['msiProductCode']) {
+        return ,@(
+            @{
+                '@odata.type'  = '#microsoft.graph.win32LobAppProductCodeDetection'
+                productCode    = $AppMetadata['msiProductCode']
+                productVersionOperator = 'greaterThanOrEqual'
+                productVersion = $(if ($AppMetadata['msiProductVersion']) { $AppMetadata['msiProductVersion'] } elseif ($AppMetadata['displayVersion']) { $AppMetadata['displayVersion'] } else { '1.0.0.0' })
+            }
+        )
+    }
+    # Fallback (MSI nicht lesbar): Datei vorhanden
+    $exeName = if ($AppMetadata['displayName'] -match 'Student') { 'Next-Exam-Student.exe' } else { 'Next-Exam-Teacher.exe' }
+    return ,@(
+        @{
+            '@odata.type' = '#microsoft.graph.win32LobAppFileSystemDetection'
+            path          = '%ProgramFiles%\' + ($AppMetadata['displayName'] -replace '\s', '-')
+            fileOrFolderName = $exeName
+            detectionType    = 'exists'
+            check32BitOn64System = $false
+        }
+    )
+}
+
 function New-NextExamIntuneApp {
     <#
     .SYNOPSIS
@@ -839,29 +899,8 @@ function New-NextExamIntuneApp {
         setupFilePath          = if ($AppMetadata['setupFilePath']) { $AppMetadata['setupFilePath'] } else { "NextExam$($AppMetadata['_role']).msi" }
     }
 
-    # Detection Rule: MSI Product Code (bevorzugt) oder File-basiert
-    if ($AppMetadata['msiProductCode']) {
-        $payload['detectionRules'] = @(
-            @{
-                '@odata.type'  = '#microsoft.graph.win32LobAppProductCodeDetection'
-                productCode    = $AppMetadata['msiProductCode']
-                productVersionOperator = 'greaterThanOrEqual'
-                productVersion = if ($AppMetadata['displayVersion']) { $AppMetadata['displayVersion'] } else { '1.0.0.0' }
-            }
-        )
-    } else {
-        # Fallback: File-Detection
-        $exeName = if ($AppMetadata['displayName'] -match 'Student') { 'Next-Exam-Student.exe' } else { 'Next-Exam-Teacher.exe' }
-        $payload['detectionRules'] = @(
-            @{
-                '@odata.type' = '#microsoft.graph.win32LobAppFileSystemDetection'
-                path          = '%ProgramFiles%\' + ($AppMetadata['displayName'] -replace '\s', '-')
-                fileOrFolderName = $exeName
-                detectionType    = 'exists'
-                check32BitOn64System = $false
-            }
-        )
-    }
+    # Detection Rule: MSI Product Code + Version (bevorzugt) oder File-basiert
+    $payload['detectionRules'] = New-NEMDetectionRules -AppMetadata $AppMetadata
 
     # Requirement Rule
     $payload['requirementRules'] = @(
@@ -1326,6 +1365,20 @@ function Publish-NextExamToIntune {
         if ($OnProgress) { & $OnProgress $step $steps $msg }
     }
 
+    # --- MSI lesen: ProductCode/Version fuer Erkennungsregel und Deinstallation ({PRODUCT-CODE}) ---
+    try {
+        $mp = Get-NEMMsiProperties -Path $MSIPath
+        if ($mp.ProductCode) {
+            $AppMetadata['msiProductCode'] = $mp.ProductCode
+            $AppMetadata['msiProductVersion'] = $mp.ProductVersion
+            Write-Log "MSI: ProductCode=$($mp.ProductCode) Version=$($mp.ProductVersion)" -Level INFO -Source 'MDM'
+        }
+    } catch { Write-Log "MSI-Eigenschaften nicht lesbar ($MSIPath): $_ - Erkennung per Datei" -Level WARN -Source 'MDM' }
+    if ("$($AppMetadata['uninstallCommandLine'])" -match '\{PRODUCT-CODE\}') {
+        if ($AppMetadata['msiProductCode']) { $AppMetadata['uninstallCommandLine'] = "$($AppMetadata['uninstallCommandLine'])".Replace('{PRODUCT-CODE}', $AppMetadata['msiProductCode']) }
+        else { $report.Message = "Deinstallations-Befehl enthaelt {PRODUCT-CODE}, aber der ProductCode der MSI ist nicht lesbar - nichts geaendert"; Write-Log $report.Message -Level ERROR -Source 'MDM'; return [PSCustomObject]$report }
+    }
+
     try {
         # --- Step 1: Bestehende App suchen ---
         & $progress 1 "Suche bestehende App: $($AppMetadata['displayName'])"
@@ -1380,6 +1433,11 @@ function Publish-NextExamToIntune {
             $updates = @{
                 displayVersion = $newVersion
                 description    = if ($AppMetadata['description']) { $AppMetadata['description'] } else { $AppMetadata['displayName'] }
+                # Erkennung + Deinstallation an die neue MSI anpassen (sonst gilt die alte Version weiter als "installiert")
+                detectionRules = (New-NEMDetectionRules -AppMetadata $AppMetadata)
+                uninstallCommandLine = $AppMetadata['uninstallCommandLine']
+                setupFilePath  = $AppMetadata['setupFilePath']
+                installCommandLine = $AppMetadata['installCommandLine']
             }
             # Icon mitschicken wenn vorhanden
             if ($AppMetadata['iconPath'] -and (Test-Path $AppMetadata['iconPath'])) {
@@ -1738,8 +1796,38 @@ function Register-MDMEntraApp {
     $clientSecret = $secretResult.secretText
     Write-Log "  Secret erstellt (gueltig bis: $endDate)" -Level INFO -Source 'MDM-Setup'
 
+    # bisheriges Secret DIESES Benutzers merken (jeder Admin hat sein eigenes - fremde bleiben unberuehrt)
+    $prevCred = $null
+    try { $prevCred = Load-MDMCredential -TenantId $TenantId } catch { }
+
     # === Credentials DPAPI-verschluesselt speichern ===
-    $credPath = Save-MDMCredential -TenantId $TenantId -ClientId $appClientId -ClientSecret $clientSecret
+    $credPath = Save-MDMCredential -TenantId $TenantId -ClientId $appClientId -ClientSecret $clientSecret -KeyId "$($secretResult.keyId)"
+
+    # === Alte eigene Secrets entfernen (sonst sammelt sich bei jedem Setup ein weiteres gueltiges Secret an) ===
+    #     entfernt: das bisherige Secret dieses Benutzers (keyId, bei aelteren Dateien ueber die ersten 3 Zeichen)
+    #     sowie abgelaufene Secrets dieses Tools. Secrets anderer Admins/Tools bleiben.
+    try {
+        $pc = (Invoke-SetupRequest -Uri "$graphBase/applications/$($appObjectId)?`$select=passwordCredentials").passwordCredentials
+        $now = (Get-Date).ToUniversalTime()
+        foreach ($c in @($pc)) {
+            if (-not $c -or "$($c.keyId)" -eq "$($secretResult.keyId)") { continue }
+            $ours = "$($c.displayName)" -like 'HU-NextExam-Manager (*'
+            if (-not $ours) { continue }
+            $isPrev = $false
+            if ($prevCred -and "$($prevCred.ClientId)" -eq "$appClientId") {
+                if ($prevCred.KeyId) { $isPrev = ("$($c.keyId)" -eq "$($prevCred.KeyId)") }
+                elseif ($prevCred.ClientSecret -and $c.hint) { $isPrev = ("$($prevCred.ClientSecret)".StartsWith("$($c.hint)", [StringComparison]::Ordinal)) }
+            }
+            $expired = $false
+            try { if ($c.endDateTime) { $expired = ([datetime]$c.endDateTime).ToUniversalTime() -lt $now } } catch { }
+            if ($isPrev -or $expired) {
+                try {
+                    Invoke-SetupRequest -Uri "$graphBase/applications/$appObjectId/removePassword" -Method POST -Body @{ keyId = "$($c.keyId)" } | Out-Null
+                    Write-Log "  Altes Secret entfernt: $($c.displayName) ($(if ($isPrev) { 'bisheriges' } else { 'abgelaufen' }))" -Level INFO -Source 'MDM-Setup'
+                } catch { Write-Log "  Altes Secret $($c.keyId) nicht entfernbar: $_" -Level WARN -Source 'MDM-Setup' }
+            }
+        }
+    } catch { Write-Log "  Alte Secrets nicht pruefbar: $_" -Level WARN -Source 'MDM-Setup' }
     Write-Log "Setup abgeschlossen: App=$AppDisplayName, ClientId=$appClientId, Credentials=$credPath" -Level INFO -Source 'MDM-Setup'
 
     return [PSCustomObject]@{
@@ -1769,7 +1857,7 @@ if ($ExecutionContext.SessionState.Module) {
         New-IntuneContentVersion, New-IntuneContentFile, Wait-IntuneFileReady, `
         Send-AzureBlobChunks, Complete-IntuneFileUpload, `
         Get-IntuneGroups, Set-NextExamIntuneAssignment, `
-        Publish-NextExamToIntune
+        Publish-NextExamToIntune, Get-NEMMsiProperties, New-NEMDetectionRules
 }
 
 #endregion

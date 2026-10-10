@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Client-Status via Share-Pattern. Clients schreiben JSON nach Install.
@@ -53,10 +53,17 @@ function Initialize-StatusShare {
     $propag  = [System.Security.AccessControl.PropagationFlags]::None
     $allow   = [System.Security.AccessControl.AccessControlType]::Allow
 
-    $computerRights = [System.Security.AccessControl.FileSystemRights]::Write `
+    # Domaenen-Computer: NUR auf diesem Ordner Dateien anlegen + lesen (nicht vererbt). Die eigene Statusdatei aendern/ersetzen
+    # duerfen sie ueber OWNER RIGHTS (Besitzer = der Computer, der sie angelegt hat) - fremde Statusdateien nicht mehr.
+    $computerRights = [System.Security.AccessControl.FileSystemRights]::CreateFiles `
                   -bor [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
     [void]$acl.AddAccessRule(
-        [System.Security.AccessControl.FileSystemAccessRule]::new($computersSid, $computerRights, $inherit, $propag, $allow))
+        [System.Security.AccessControl.FileSystemAccessRule]::new($computersSid, $computerRights,
+            [System.Security.AccessControl.InheritanceFlags]::None, $propag, $allow))
+    # lokale Administratoren (nicht nur Domaenen-Admins) duerfen verwalten/aufraeumen
+    [void]$acl.AddAccessRule(
+        [System.Security.AccessControl.FileSystemAccessRule]::new([System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'),
+            [System.Security.AccessControl.FileSystemRights]::FullControl, $inherit, $propag, $allow))
 
     $adminRights = [System.Security.AccessControl.FileSystemRights]::FullControl
     [void]$acl.AddAccessRule(

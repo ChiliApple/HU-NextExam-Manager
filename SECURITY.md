@@ -43,5 +43,7 @@ addressed in a patch release within 7 days.
   certificate (thumbprint `1B669AE240DA1A91043C4576763D9F8E0BF762FA`, built into the tool).
   The private key never touches GitHub. All files are downloaded and verified before any
   file is replaced.
-- **Pull Script:** The optional GitHub PAT in `config.json` is only used for rate limits and
-  should be a fine-grained read-only token scoped to this repository only.
+- **GitHub token (v3.4.0+):** The optional GitHub PAT (rate limits only) is entered in
+  `Config\config.json` (`ToolSettings.GitHubToken`); on the next elevated start the tool moves it to
+  `Config\github-token.dat` (DPAPI LocalMachine, readable by SYSTEM/Administrators only) and clears
+  the field. Use a fine-grained read-only token scoped to this repository only.

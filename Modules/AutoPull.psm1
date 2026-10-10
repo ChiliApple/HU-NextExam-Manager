@@ -158,52 +158,63 @@ function Invoke-AutoPullRun {
         $rel = Get-NextExamLatestRelease
         Write-Log -Message "Release: $($rel.TagName) Student=$($rel.Student.Version) Teacher=$($rel.Teacher.Version)" -Level INFO -Source 'AutoPull'
 
-        $tasks = @($cfg.Tasks | Where-Object { $_.StudentSharePath -and $_.TeacherSharePath })
-        if ($tasks.Count -eq 0) {
+        # je Rolle getrennt: fehlt eine Rolle im Release oder hat ein Task nur eine Freigabe, laeuft die andere trotzdem
+        $roles = @()
+        foreach ($role in 'Student', 'Teacher') {
+            $info = $rel.$role
+            $shareProp = "$($role)SharePath"
+            $rTasks = @($cfg.Tasks | Where-Object { $_ -and "$($_.$shareProp)" })
+            if (-not $rTasks.Count) { continue }
+            if (-not $info -or -not "$($info.FileName)" -or -not "$($info.DownloadUrl)") {
+                $script:AutoPullErrors++
+                Write-Log -Message "$role-MSI fehlt im Release $($rel.TagName) - $role wird uebersprungen" -Level ERROR -Source 'AutoPull'
+                continue
+            }
+            $roles += [pscustomobject]@{ Role = $role; Info = $info; ShareProp = $shareProp; Tasks = $rTasks }
+        }
+        if (-not $roles.Count) {
             Write-Log -Message 'Keine Tasks mit Shares - nichts zu tun' -Level WARN -Source 'AutoPull'
-            return
+            return [int]$script:AutoPullErrors
         }
 
         $temp = Join-Path $env:TEMP "HU-NextExam-AutoPull-$(Get-Random)"
         New-Item -ItemType Directory -Path $temp -Force | Out-Null
-        $tmpS = Join-Path $temp $rel.Student.FileName
-        $tmpT = Join-Path $temp $rel.Teacher.FileName
-
         try {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            $wc = New-Object System.Net.WebClient
-            $wc.Headers.Add('User-Agent', 'HU-NextExam-Manager-AutoPull')
-            Write-Log -Message "DL Student: $($rel.Student.DownloadUrl)" -Level INFO -Source 'AutoPull'
-            $wc.DownloadFile($rel.Student.DownloadUrl, $tmpS)
-            Write-Log -Message "DL Teacher: $($rel.Teacher.DownloadUrl)" -Level INFO -Source 'AutoPull'
-            $wc.DownloadFile($rel.Teacher.DownloadUrl, $tmpT)
-
-            foreach ($t in $tasks) {
+            $trustP = @{ TrustedPublisher = "$($cfg.ToolSettings.MsiTrustedPublisher)"; TrustedThumbprints = @($cfg.ToolSettings.MsiTrustedThumbprints) }
+            foreach ($r in $roles) {
+                $info = $r.Info
+                # Download nur, wenn mindestens eine Freigabe nicht aktuell ist
+                $todo = @()
+                foreach ($t in $r.Tasks) {
+                    try {
+                        $cur = Read-ShareVersionInfo -SharePath $t.($r.ShareProp) -Role $r.Role
+                        if ($cur -and ($cur.Version -eq $info.Version)) { Write-Log -Message "$($t.DisplayName) $($r.Role) bereits aktuell - skip" -Level INFO -Source 'AutoPull' }
+                        else { $todo += $t }
+                    } catch { $todo += $t }
+                }
+                if (-not $todo.Count) { continue }
+                $tmp = Join-Path $temp ([System.IO.Path]::GetFileName("$($info.FileName)"))
                 try {
-                    # Skip wenn beide Shares schon aktuell sind
-                    $curS = Read-ShareVersionInfo -SharePath $t.StudentSharePath -Role Student
-                    $curT = Read-ShareVersionInfo -SharePath $t.TeacherSharePath -Role Teacher
-                    $sOk = $curS -and ($curS.Version -eq $rel.Student.Version)
-                    $tOk = $curT -and ($curT.Version -eq $rel.Teacher.Version)
-                    if ($sOk -and $tOk) {
-                        Write-Log -Message "$($t.DisplayName) bereits aktuell - skip" -Level INFO -Source 'AutoPull'
-                        continue
-                    }
-                    $trustP = @{ TrustedPublisher = "$($cfg.ToolSettings.MsiTrustedPublisher)"; TrustedThumbprints = @($cfg.ToolSettings.MsiTrustedThumbprints) }
-                    if (-not $sOk) {
-                        $null = Deploy-MSIToShare -SourceMSI $tmpS -SharePath $t.StudentSharePath `
-                                    -Role 'Student' -Version $rel.Student.Version `
-                                    -BuildDate $rel.Student.BuildDate -FileName $rel.Student.FileName -ExpectedSha256 "$($rel.Student.Sha256)" @trustP
-                    }
-                    if (-not $tOk) {
-                        $null = Deploy-MSIToShare -SourceMSI $tmpT -SharePath $t.TeacherSharePath `
-                                    -Role 'Teacher' -Version $rel.Teacher.Version `
-                                    -BuildDate $rel.Teacher.BuildDate -FileName $rel.Teacher.FileName -ExpectedSha256 "$($rel.Teacher.Sha256)" @trustP
-                    }
-                    Write-Log -Message "Deployed $($t.DisplayName): Student=$($rel.Student.Version) Teacher=$($rel.Teacher.Version)" -Level INFO -Source 'AutoPull'
+                    $wc = New-Object System.Net.WebClient
+                    $wc.Headers.Add('User-Agent', 'HU-NextExam-Manager-AutoPull')
+                    Write-Log -Message "DL $($r.Role): $($info.DownloadUrl)" -Level INFO -Source 'AutoPull'
+                    $wc.DownloadFile($info.DownloadUrl, $tmp)
                 } catch {
                     $script:AutoPullErrors++
-                    Write-Log -Message "Task $($t.DisplayName) fehlgeschlagen: $_" -Level ERROR -Source 'AutoPull'
+                    Write-Log -Message "Download $($r.Role) fehlgeschlagen: $_" -Level ERROR -Source 'AutoPull'
+                    continue
+                }
+                foreach ($t in $todo) {
+                    try {
+                        $null = Deploy-MSIToShare -SourceMSI $tmp -SharePath $t.($r.ShareProp) `
+                                    -Role $r.Role -Version $info.Version `
+                                    -BuildDate $info.BuildDate -FileName $info.FileName -ExpectedSha256 "$($info.Sha256)" @trustP
+                        Write-Log -Message "Deployed $($t.DisplayName): $($r.Role)=$($info.Version)" -Level INFO -Source 'AutoPull'
+                    } catch {
+                        $script:AutoPullErrors++
+                        Write-Log -Message "Task $($t.DisplayName) $($r.Role) fehlgeschlagen: $_" -Level ERROR -Source 'AutoPull'
+                    }
                 }
             }
         } finally {

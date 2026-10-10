@@ -1,5 +1,48 @@
 # Changelog
 
+## v3.4.0 (2026-10-10)
+
+Restliche Befunde aus der Code-Pruefung (MITTEL/NIEDRIG) und Daten-Ordner `Config\`.
+
+### Wichtig nach dem Update
+- **Daten liegen jetzt in `Config\`:** `config.json`, `update.json` und `installed.json` werden beim ersten Start
+  (bzw. beim naechsten Tool-Update) aus dem Programmordner nach `Config\` verschoben. Nichts zu tun. Wer die Dateien
+  von Hand bearbeitet, findet sie dort. Beim Wechsel auf eine Version vor 3.4.0 kopiert das Update sie zurueck.
+- **Status-Share einrichten erneut ausfuehren** (Reiter Clients, je Task): Die PCs duerfen im Status-Share nur noch
+  eigene Dateien anlegen und aendern, nicht mehr die Dateien anderer PCs ueberschreiben oder loeschen.
+- **Intune: naechstes Deploy passt die Erkennungsregel an.** Bisher galt jede installierte Version als "installiert"
+  (Datei vorhanden) - Updates kamen per Intune nie an, und der Deinstallations-Befehl enthielt noch `{PRODUCT-CODE}`.
+- Aenderungen an `Pull.ps1` (Tool-Update) wirken erst beim uebernaechsten Update - das laufende Update macht noch der
+  bisherige Pull; das Tool verschiebt die Dateien dann beim Start selbst.
+
+### Sicherheit
+- **GitHub-Token geschuetzt:** Ein Token in `config.json` (`ToolSettings.GitHubToken`, fuer alle Benutzer lesbar) wird
+  beim Start nach `Config\github-token.dat` uebernommen - verschluesselt (DPAPI, Rechner) und nur fuer
+  Administratoren/SYSTEM lesbar; das Feld in `config.json` wird geleert. Neuer Token: wieder in `config.json` eintragen.
+- **Status-Share:** PCs (Domain Computers) erhalten nur noch *Dateien erstellen* + *Lesen* im Ordner; Aendern nur der eigenen
+  Datei (Besitzer). Lokale Administratoren am Server: Vollzugriff.
+- **Intune-App-Setup:** Beim erneuten Einrichten wird das bisherige Secret des eigenen Benutzers und abgelaufene Secrets
+  des Tools entfernt (vorher kam jedes Mal ein weiteres gueltiges Secret dazu). Secrets anderer Admins bleiben.
+- **GPO neu anlegen nur bei echtem Zugriffsfehler:** Die Rueckfrage "GPO loeschen und neu anlegen" kam auch bei Meldungen
+  wie *nicht gefunden* (z.B. Freigabe fehlt) - jetzt nur noch bei "Zugriff verweigert".
+
+### Behoben
+- **Intune: Erkennung per MSI-ProductCode und Version** (>= neue Version) statt "Datei vorhanden"; bei vorhandenen Apps
+  werden Erkennung, Deinstallation und Installations-Befehl beim Update mit aktualisiert. `{PRODUCT-CODE}` wird aus der MSI
+  eingesetzt.
+- **GPO-Version:** Scheitert das Setzen der Version in AD oder GPT.INI, gibt es jetzt einen Fehler statt einer Warnung
+  (sonst uebernehmen die PCs die Aenderung nicht). Kein Ueberlauf mehr bei grossen Versionsnummern; Schreiben und Pruefen am
+  selben DC.
+- **Auto-Pull je Rolle:** Fehlt im Release die Student- oder Teacher-MSI oder hat ein Task nur eine Freigabe, wird die
+  andere Rolle trotzdem verteilt (vorher brach der ganze Lauf ab bzw. der Task wurde uebersprungen). MSI-Download nur, wenn
+  eine Freigabe nicht aktuell ist.
+- **Config wird atomar gespeichert** (Zwischendatei, vorheriger Stand als `config.json.bak`). Ist `config.json` beschaedigt,
+  wird der letzte gute Stand geladen.
+- **Intune-App-Setup:** Die Client-ID wird beim richtigen Tenant gespeichert (vorher: falsche Variable, nichts gespeichert;
+  bei inzwischen geaenderter Auswahl beim falschen Tenant).
+- **Log:** Das Intune-Deploy im Hintergrund schreibt in dieselbe Log-Datei mit derselben Stufe wie die Oberflaeche.
+- **Gleichzeitiges Verteilen** auf dieselbe Freigabe (Oberflaeche und Auto-Pull) wird gesperrt.
+
 ## v3.3.2 (2026-10-10)
 
 ### Behoben

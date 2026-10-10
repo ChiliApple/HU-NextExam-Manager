@@ -35,10 +35,13 @@ function Get-NextExamLatestRelease {
             Accept       = 'application/vnd.github.v3+json'
             'User-Agent' = 'HU-NextExam-Manager'
         }
-        # Optional: GitHub PAT aus Config -> 5000 statt 60 API-Calls/h
+        # Optional: GitHub PAT -> 5000 statt 60 API-Calls/h
+        #   Config\github-token.dat (verschluesselt, nur Administratoren/SYSTEM), sonst noch config.json (nicht uebernommen)
         $tok = $null
-        try { $tok = $script:Config.ToolSettings.GitHubToken } catch {}
-        if (-not $tok) { try { $tok = (Load-Config).ToolSettings.GitHubToken } catch {} }
+        if (Get-Command Get-NEMGitHubToken -ErrorAction SilentlyContinue) { try { $tok = Get-NEMGitHubToken (Split-Path $PSScriptRoot -Parent) } catch {} }
+        if (-not $tok -and (Get-Command Get-ConfigFilePath -ErrorAction SilentlyContinue)) {
+            try { $cf = Get-ConfigFilePath; if ($cf -and (Test-Path -LiteralPath $cf)) { $tok = "$((Get-Content -LiteralPath $cf -Raw -Encoding UTF8 | ConvertFrom-Json).ToolSettings.GitHubToken)".Trim() } } catch {}
+        }
         if ($tok) { $h['Authorization'] = "token $tok" }
 
         if ($IncludePrerelease) {
@@ -254,6 +257,15 @@ function Deploy-MSIToShare {
     )
     # 1. Herkunft pruefen - vor jeder Aenderung an der Freigabe
     $trust = Test-NextExamMsiTrust -Path $SourceMSI -TrustedPublisher $TrustedPublisher -TrustedThumbprints $TrustedThumbprints -ExpectedSha256 $ExpectedSha256
+    # nur ein Verteilen je Freigabe und Rolle gleichzeitig auf diesem Rechner (Oberflaeche + Auto-Pull als SYSTEM)
+    $key = ([System.IO.Path]::GetFullPath($SharePath).TrimEnd('\') + '|' + $Role).ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { $h = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key))[0..7] | ForEach-Object { $_.ToString('x2') }) } finally { $sha.Dispose() }
+    $mtx = New-Object System.Threading.Mutex($false, "Global\HU-NextExam-Manager_Deploy_$h")
+    $own = $false
+    try { $own = $mtx.WaitOne([TimeSpan]::FromMinutes(3)) } catch [System.Threading.AbandonedMutexException] { $own = $true }
+    if (-not $own) { $mtx.Dispose(); throw "Freigabe $SharePath ($Role) wird gerade von einem anderen Vorgang beschrieben - spaeter erneut versuchen" }
+    try {
     if (-not (Test-Path $SharePath)) {
         New-Item -ItemType Directory -Path $SharePath -Force | Out-Null
     }
@@ -278,6 +290,7 @@ function Deploy-MSIToShare {
     # 4. version-*.json zuletzt - erst dann sehen die Clients die neue Version
     Write-ShareVersionInfo -SharePath $SharePath -Role $Role -Version $Version `
                            -BuildDate $BuildDate -FileName $FileName
+    } finally { try { $mtx.ReleaseMutex() } catch { }; $mtx.Dispose() }
 
     [PSCustomObject]@{
         Role             = $Role

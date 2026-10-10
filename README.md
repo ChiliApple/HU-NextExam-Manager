@@ -313,6 +313,8 @@ HU-NextExam-Manager/
 ├── .github/                 # CI: Tests, Pruefsummen-Datei fuer Releases
 ├── Start.vbs                # Fensterloser Launcher (mit UAC-Elevation)
 ├── README.md                # Diese Datei
+├── Config/                  # lokale Daten (ab v3.4.0): version.json, config.json, update.json,
+│                            #   installed.json, github-token.dat (nur Admins/SYSTEM)
 ├── Assets/
 │   ├── icon.ico
 │   ├── icon.png

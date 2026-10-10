@@ -71,6 +71,8 @@ if ($AutoPull) {
     $apOwn = $false
     try { $apOwn = $apMutex.WaitOne(0, $false) } catch [System.Threading.AbandonedMutexException] { $apOwn = $true }
     if (-not $apOwn) { exit 0 }
+    # Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\
+    $apMoved = @(Move-NEMDataFiles $PSScriptRoot)
     # Programmordner absichern - laeuft der Auto-Pull mit Adminrechten (SYSTEM) und gelingt das nicht: abbrechen
     $prot = Invoke-NEMAppDirProtection -Root $PSScriptRoot
     if ($prot.Status -eq 'Failed') {
@@ -81,7 +83,13 @@ if ($AutoPull) {
         Import-Module (Join-Path $ModulesPath "$m.psm1") -Force -Global -DisableNameChecking -ErrorAction Stop
     }
     try {
-        $apErr = @(Invoke-AutoPullRun -ConfigPath (Join-Path $RootPath 'config.json')) | Where-Object { $_ -is [int] } | Select-Object -Last 1
+        $apCfgPath = Get-NEMDataFile $RootPath 'config.json'
+        # GitHub-Token aus config.json in die geschuetzte Datei uebernehmen (config.json ist fuer alle Benutzer lesbar)
+        if (Test-Path -LiteralPath $apCfgPath) {
+            try { Set-ConfigPath -Path $apCfgPath; $apCfg = Load-Config; if (Move-NEMGitHubTokenToStore $RootPath $apCfg) { Save-Config -Config $apCfg } } catch { }
+        }
+        $apErr = @(Invoke-AutoPullRun -ConfigPath $apCfgPath) | Where-Object { $_ -is [int] } | Select-Object -Last 1
+        foreach ($mm in $apMoved) { Write-Log -Message $mm -Level INFO -Source 'AutoPull' }
         if ($prot.Status -ne 'Ok') { Write-Log -Message $prot.Text -Level $(if ($prot.Status -eq 'Fixed') { 'INFO' } else { 'WARN' }) -Source 'AutoPull' }
         # Fehler im Ergebnis der geplanten Aufgabe sichtbar machen (Dashboard: letzter Exitcode)
         if ($apErr) { exit 1 }
@@ -116,6 +124,9 @@ try {
         exit 0
     }
 } catch {}
+
+# --- Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\ ---
+$script:DataFilesMoved = @(Move-NEMDataFiles $PSScriptRoot)
 
 # --- Programmordner absichern (nur Administratoren/SYSTEM duerfen schreiben) ---
 $script:AppDirProtection = Invoke-NEMAppDirProtection -Root $PSScriptRoot
@@ -179,14 +190,20 @@ foreach ($m in 'Logging','Config','MSIPull','WMIFilter','GPOSetup','AutoPull','C
 }
 
 # --- Config-Pfad festlegen (portabel: neben dem Tool) ---
-Set-ConfigPath -Path (Join-Path $script:RootPath 'config.json')
+Set-ConfigPath -Path (Get-NEMDataFile $script:RootPath 'config.json')
 
 # --- Config laden ---
 $script:Config = Load-Config
+# GitHub-Token aus config.json (fuer alle Benutzer lesbar) in Config\github-token.dat (nur Administratoren/SYSTEM) uebernehmen
+$script:TokenMoved = $false
+try { if (Move-NEMGitHubTokenToStore $script:RootPath $script:Config) { Save-Config -Config $script:Config; $script:TokenMoved = $true } } catch { $script:TokenMoveError = "$($_.Exception.Message)" }
 
 # --- Logging initialisieren ---
 Initialize-Log -Path $script:Config.ToolSettings.LogPath -Level $script:Config.ToolSettings.LogLevel
 Write-Log -Message "HU-NextExam-Manager v$($script:ToolVersion) startet" -Level INFO -Source 'Main'
+foreach ($mm in $script:DataFilesMoved) { Write-Log -Message $mm -Level $(if ($mm -match 'nicht nach') { 'WARN' } else { 'INFO' }) -Source 'Main' }
+if ($script:TokenMoved) { Write-Log -Message 'GitHub-Token aus config.json nach Config\github-token.dat uebernommen (verschluesselt, nur Administratoren/SYSTEM)' -Level INFO -Source 'Main' }
+if ($script:TokenMoveError) { Write-Log -Message "GitHub-Token nicht uebernehmbar: $($script:TokenMoveError)" -Level WARN -Source 'Main' }
 if ($script:AppDirProtection -and $script:AppDirProtection.Status -ne 'Ok') {
     Write-Log -Message $script:AppDirProtection.Text -Level $(switch ($script:AppDirProtection.Status) { 'Fixed' { 'INFO' } 'Skipped' { 'INFO' } default { 'WARN' } }) -Source 'Main'
 }
@@ -1617,7 +1634,7 @@ function Invoke-GPOCreateForTasks {
                 $ok++
             } catch {
                 $exMsg = $_.Exception.Message
-                $isAccess = $exMsg -match '0x80070005|E_ACCESSDENIED|wurde verweigert|Access.*denied|nicht gefunden|gpoDisplayName'
+                $isAccess = (Test-NEMAccessDenied $_)
                 Write-Log -Message "GPO-Create ${gpoN}: $_ | Pos: $($_.InvocationInfo.PositionMessage)" -Level ERROR -Source 'GPOSetup'
 
                 if ($isAccess) {
@@ -1777,7 +1794,7 @@ function Invoke-FWGPOCreateForTasks {
                 $ok++
             } catch {
                 $exMsg = $_.Exception.Message
-                $isAccess = $exMsg -match '0x80070005|E_ACCESSDENIED|wurde verweigert|Access.*denied|nicht gefunden|gpoDisplayName'
+                $isAccess = (Test-NEMAccessDenied $_)
                 Write-Log -Message "FW-GPO-Create $($j.Name): $exMsg | Pos: $($_.InvocationInfo.PositionMessage)" -Level ERROR -Source 'GPOSetup'
                 if ($isAccess) {
                     $res = [System.Windows.MessageBox]::Show(
@@ -1959,7 +1976,7 @@ $script:lstDashTasks      = Get-UI 'lstDashTasks'
 function Update-Dashboard {
     $script:lblDashToolVer.Text    = "Tool-Version: $($script:ToolVersion)"
     try { Update-NEMUpdateInfo } catch {}
-    $script:lblDashConfigPath.Text = "Config: $script:RootPath\config.json"
+    $script:lblDashConfigPath.Text = "Config: $(Get-ConfigFilePath)"
     $script:lblDashLogPath.Text    = "Log:    $(Expand-LogPath)"
 
     if ($script:CurrentRelease) {
@@ -2971,10 +2988,12 @@ function Invoke-MDMDeploy {
 
     $ps = [powershell]::Create()
     $ps.AddScript({
-        param($msiPaths, $accessToken, $selectedGroupIds, $availableAll, $forceDeploy, $metadataMap, $modulesPath, $deployTempBase, $allowMsiMigration)
+        param($msiPaths, $accessToken, $selectedGroupIds, $availableAll, $forceDeploy, $metadataMap, $modulesPath, $deployTempBase, $allowMsiMigration, $logSettings)
 
         # Module im Runspace laden (Logging zuerst - wird von MDMDeploy benoetigt)
         Import-Module (Join-Path $modulesPath 'Logging.psm1')   -Force -ErrorAction Stop
+        # gleiche Log-Datei und Stufe wie die Oberflaeche (sonst Standardpfad)
+        if ($logSettings -and $logSettings.Path) { try { Initialize-Log -Path $logSettings.Path -Level $logSettings.Level } catch {} }
         Import-Module (Join-Path $modulesPath 'MDMDeploy.psm1') -Force -ErrorAction Stop
 
         $results = @()
@@ -3017,7 +3036,7 @@ function Invoke-MDMDeploy {
             }
         }
         return ,$results
-    }).AddArgument($msiPaths).AddArgument($accessToken).AddArgument($selectedGroupIds).AddArgument($availableAll).AddArgument($forceDeploy).AddArgument($metadataMap).AddArgument($script:ModulesPath).AddArgument($deployTempBase).AddArgument($allowMsiMigration)
+    }).AddArgument($msiPaths).AddArgument($accessToken).AddArgument($selectedGroupIds).AddArgument($availableAll).AddArgument($forceDeploy).AddArgument($metadataMap).AddArgument($script:ModulesPath).AddArgument($deployTempBase).AddArgument($allowMsiMigration).AddArgument((Get-LogSettings))
 
     $ps.Runspace = $rs
     $handle = $ps.BeginInvoke()
@@ -3159,10 +3178,11 @@ $script:btnMDMSetupApp.Add_Click({
                             -TenantId $ctx.TenantId
 
                         # Tenant Config aktualisieren (ClientId eintragen)
-                        $tenantObj = Get-SelectedMDMTenant
+                        # Tenant ueber die TenantId des Setups suchen (nicht die evtl. inzwischen geaenderte Auswahl)
+                        $tenantObj = @($script:Config.MDMTenants) | Where-Object { $_.TenantId -eq $ctx.TenantId } | Select-Object -First 1
                         if ($tenantObj -and (-not $tenantObj.ClientId -or $tenantObj.ClientId -ne $result.ClientId)) {
                             $tenantObj | Add-Member -NotePropertyName 'ClientId' -NotePropertyValue $result.ClientId -Force
-                            try { Save-Config -Config $script:AppConfig } catch {
+                            try { Save-Config -Config $script:Config } catch {
                                 Write-Log "Config-Speichern fehlgeschlagen: $_" -Level WARN -Source 'MDM-UI'
                             }
                         }
@@ -3436,6 +3456,18 @@ function ConvertTo-CleanVersion {
     try { return [Version]$clean } catch { return $null }
 }
 
+# Nur echter Zugriffsfehler (Datei in SYSVOL gesperrt/anderer Besitzer) bietet das Neu-Anlegen der GPO an -
+# nicht z.B. "Freigabe nicht gefunden" oder eine fehlgeschlagene Pruefung (sonst wuerde die GPO ohne Grund geloescht)
+function Test-NEMAccessDenied($ErrRecord) {
+    $ex = $ErrRecord.Exception
+    while ($ex) {
+        if ($ex -is [System.UnauthorizedAccessException]) { return $true }
+        if ($ex.HResult -eq -2147024891) { return $true }   # 0x80070005 E_ACCESSDENIED
+        $ex = $ex.InnerException
+    }
+    return ("$($ErrRecord.Exception.Message)" -match '0x80070005|E_ACCESSDENIED|Zugriff (auf .* )?(wurde )?verweigert|Access (to the path .* )?is denied|Access denied')
+}
+
 # Hintergrund-Job (eigener Runspace) + DispatcherTimer; OnDone laeuft im UI-Thread mit dem ersten Ergebnis
 function Start-NEMJob {
     param([string]$Name, [scriptblock]$Work, [object[]]$ArgumentList = @(), [scriptblock]$OnDone, [int]$TimeoutSec = 60)
@@ -3474,11 +3506,16 @@ function Start-NEMJob {
 }
 
 function Get-NEMReadToken {
+    $t = Get-NEMGitHubToken $script:RootPath
+    if ($t) { return $t }
+    # noch nicht uebernommen (z.B. ohne Administratorrechte gestartet)
     try { if ($script:Config.ToolSettings.GitHubToken) { return "$($script:Config.ToolSettings.GitHubToken)".Trim() } } catch {}
     return ''
 }
+# Ordner der update.json (Config\, bei alter Installation evtl. noch der Programmordner)
+function Get-NEMUpdateCfgDir { Split-Path -Parent (Get-NEMDataFile $script:RootPath 'update.json') }
 function Get-NEMInstalledInfo {
-    $f = Join-Path $script:RootPath 'installed.json'
+    $f = Get-NEMDataFile $script:RootPath 'installed.json'
     if (Test-Path -LiteralPath $f) { try { return (Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json) } catch {} }
     return $null
 }
@@ -3486,7 +3523,7 @@ function Format-NEMChannel([string]$Channel) { if ($Channel -eq 'Test') { 'Test'
 
 # Info-Zeile (Dashboard > Tool, Settings > Tool-Update)
 function Update-NEMUpdateInfo {
-    $uc = Get-HMUpdateConfig $script:RootPath
+    $uc = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $script:UpdateCfg = $uc
     $inst = Get-NEMInstalledInfo
     $chk = if ($inst -and "$($inst.Check)") { "$($inst.Check)" -replace '\b([0-9A-Fa-f]{8})[0-9A-Fa-f]{32}\b', '$1...' } else { '' }
@@ -3499,7 +3536,7 @@ function Update-NEMUpdateInfo {
 }
 
 function Invoke-UpdateCheck {
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $script:UpdateCfg = $cfg
     $script:btnUpdate.Content = 'Pruefe...'
     Start-NEMJob -Name 'UpdateCheck' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, (Get-NEMReadToken), $cfg.Owner, $cfg.Repo, $cfg.Channel, [bool]$cfg.RequireSignature, [bool]$cfg.UseBranch, $cfg.Branch) -Work {
@@ -3572,7 +3609,7 @@ function Invoke-UpdateCheck {
 function Start-NEMPull([string]$Version = '') {
     $pull = Join-Path $script:RootPath 'Pull.ps1'
     if (-not (Test-Path -LiteralPath $pull)) { [System.Windows.MessageBox]::Show("Pull.ps1 nicht gefunden: $pull", 'Fehler', 'OK', 'Error') | Out-Null; return }
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $what = if ($Version) { "Version $Version" } elseif ($cfg.UseBranch) { "den Entwicklungsstand (Branch $($cfg.Branch), ohne Pruefsumme)" } else { "v$($script:UpdateRemoteVer) (Kanal $(Format-NEMChannel $cfg.Channel))" }
     $res = [System.Windows.MessageBox]::Show(
         "Tool schliessen, $what von GitHub laden$(if ($Version -or -not $cfg.UseBranch) { ', pruefen' }) und neu starten?`n`n  Aktuell: v$($script:ToolVersion)`n`nconfig.json und Einstellungen bleiben erhalten.",
@@ -3597,7 +3634,7 @@ $script:btnUpdate.Add_Click({
 # --- Andere Version / Vorversion waehlen
 function Show-NEMVersionPicker {
     Set-Status 'Versionen werden von GitHub gelesen ...'
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     Start-NEMJob -Name 'Versions' -TimeoutSec 40 -ArgumentList @($script:UpdateLib, (Get-NEMReadToken), $cfg.Owner, $cfg.Repo) -Work {
         param($lib, $token, $owner, $repo)
         try {
@@ -3610,7 +3647,7 @@ function Show-NEMVersionPicker {
         if (-not $r -or $r -is [string] -or $r.Err) { Set-Status "Versionen nicht lesbar: $(if ($r -is [string]) { $r } else { $r.Err })"; return }
         $list = @($r.Items | Where-Object { $_ -and $_.Version })
         if (-not $list.Count) { Set-Status 'Keine Releases gefunden.'; return }
-        $req = (Get-HMUpdateConfig $script:RootPath).RequireSignature
+        $req = (Get-HMUpdateConfig (Get-NEMUpdateCfgDir)).RequireSignature
         $lv = ConvertTo-CleanVersion $script:ToolVersion
         $rows = foreach ($x in $list) {
             $cmp = 0; try { $cmp = ([Version]"$($x.Version)").CompareTo($lv) } catch { }
@@ -3658,7 +3695,7 @@ function Show-NEMVersionPicker {
             $win = $script:VersionPickerWin
             $sel = $win.FindName('lst').SelectedItem
             if (-not $sel) { return }
-            if ((Get-HMUpdateConfig $script:RootPath).RequireSignature -and "$($sel.Signatur)" -ne 'ja') {
+            if ((Get-HMUpdateConfig (Get-NEMUpdateCfgDir)).RequireSignature -and "$($sel.Signatur)" -ne 'ja') {
                 [System.Windows.MessageBox]::Show($win, "Version $($sel.Version) ist nicht signiert und kann nicht installiert werden (nur signierte Updates - Settings > Tool-Update).", 'Tool-Update', 'OK', 'Warning') | Out-Null
                 return
             }
@@ -3679,7 +3716,7 @@ function Read-NEMSignToken {
     return ''
 }
 function Get-NEMSignToken {
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $tok = Read-NEMSignToken
     if ($tok) { return $tok }
     $c = Get-Credential -UserName 'github' -Message "GitHub-Token mit Schreibrecht fuer $($cfg.Owner)/$($cfg.Repo) als Kennwort eingeben (Fine-grained PAT, 'Contents: Read and write'). Wird verschluesselt nur fuer deinen Windows-Benutzer gespeichert."
@@ -3690,10 +3727,10 @@ function Get-NEMSignToken {
     try { New-Item -ItemType Directory -Path (Split-Path $f -Parent) -Force | Out-Null; $c | Export-Clixml -Path $f -Force } catch { Write-Log -Message "Sign-Token nicht gespeichert: $_" -Level WARN -Source 'Update' }
     return $tok
 }
-function Test-NEMCanSign { return [bool](Get-HMSigningCert (Get-HMUpdateConfig $script:RootPath).SignerThumbprint) }
+function Test-NEMCanSign { return [bool](Get-HMSigningCert (Get-HMUpdateConfig (Get-NEMUpdateCfgDir)).SignerThumbprint) }
 
 function Start-NEMReleaseSigning {
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     if (-not (Get-HMSigningCert $cfg.SignerThumbprint)) { [System.Windows.MessageBox]::Show("Signatur-Zertifikat $($cfg.SignerThumbprint) mit privatem Schluessel ist auf diesem PC (Benutzer $env:USERNAME) nicht vorhanden.", 'Release signieren', 'OK', 'Error') | Out-Null; return }
     $tok = Get-NEMSignToken
     if (-not $tok) { return }
@@ -3738,7 +3775,7 @@ function Start-NEMReleaseSigning {
 }
 
 function Start-NEMReleasePublish {
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $tok = Get-NEMSignToken
     if (-not $tok) { return }
     $script:SignCtx = [pscustomobject]@{ Owner = $cfg.Owner; Repo = $cfg.Repo; Thumb = $cfg.SignerThumbprint; Token = $tok }
@@ -3813,7 +3850,7 @@ $script:UpdUiLoading     = $false
 function Import-NEMUpdateSettingsUI {
     $script:UpdUiLoading = $true
     try {
-        $uc = Get-HMUpdateConfig $script:RootPath
+        $uc = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
         $script:cmbUpdChannel.SelectedIndex = $(if ($uc.Channel -eq 'Test') { 1 } else { 0 })
         $script:chkUpdRequireSig.IsChecked = (-not $uc.AllowUnsigned)
         $script:txtUpdSigner.Text = $(if ($uc.SignerThumbprint) { $uc.SignerThumbprint } else { Get-HMDefaultSigner $uc.Owner $uc.Repo })
@@ -3829,7 +3866,9 @@ $script:chkUpdRequireSig.Add_Unchecked({
 })
 $script:btnUpdSave.Add_Click({
     try {
-        $f = Join-Path $script:RootPath 'update.json'
+        $f = Get-NEMDataFile $script:RootPath 'update.json'
+        $fd = Split-Path -Parent $f
+        if (-not (Test-Path -LiteralPath $fd)) { New-Item -ItemType Directory -Path $fd -Force | Out-Null }
         $o = [ordered]@{}
         if (Test-Path -LiteralPath $f) {
             try { $u = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json; foreach ($p in $u.PSObject.Properties) { $o[$p.Name] = $p.Value } } catch {}
@@ -3859,7 +3898,7 @@ $script:btnHelp = Get-UI 'btnHelp'
 function Show-NEMManual {
     $script:ManualLocal = Join-Path $script:RootPath 'Docs\Anleitung.html'
     $alt = Join-Path ([Environment]::GetFolderPath('CommonDocuments')) 'HU-NextExam-Manager_Anleitung.html'
-    $cfg = Get-HMUpdateConfig $script:RootPath
+    $cfg = Get-HMUpdateConfig (Get-NEMUpdateCfgDir)
     $ref = $(if ($cfg.UseBranch) { $cfg.Branch } else { "v$($script:ToolVersion)" })
     Set-Status 'Anleitung wird geladen ...'
     Start-NEMJob -Name 'Manual' -TimeoutSec 30 -ArgumentList @($cfg.Owner, $cfg.Repo, $ref, @($script:ManualLocal, $alt)) -Work {

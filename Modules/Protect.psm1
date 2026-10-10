@@ -17,6 +17,8 @@
 #>
 
 $script:NEMOkSids = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')   # SYSTEM, Administratoren, TrustedInstaller
+# Dateien mit Geheimnissen: nur SYSTEM + Administratoren duerfen sie lesen (eigene, nicht geerbte Rechte)
+$script:NEMSecretFiles = @('Config\github-token.dat')
 $script:NEMBadRights = ([long][System.Security.AccessControl.FileSystemRights]'WriteData, AppendData, WriteExtendedAttributes, WriteAttributes, Delete, DeleteSubdirectoriesAndFiles, ChangePermissions, TakeOwnership') -bor 0x50000000L   # + GENERIC_WRITE, GENERIC_ALL
 
 function Test-NEMIsAdmin {
@@ -60,6 +62,12 @@ function Get-NEMAppDirIssues([string]$Root) {
         $acl = if ($isDir) { [System.IO.Directory]::GetAccessControl($Path) } else { [System.IO.File]::GetAccessControl($Path) }
         $own = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
         if ($script:NEMOkSids -notcontains $own) { $issues.Add("Besitzer $(ConvertTo-NEMAccountName $own): $Path") }
+        if (-not $isDir -and (Test-NEMSecretFile $Root $Path)) {
+            # Geheimnis: niemand ausser SYSTEM/Administratoren darf lesen (auch nicht geerbt)
+            foreach ($r in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
+                if ("$($r.AccessControlType)" -eq 'Allow' -and $script:NEMOkSids -notcontains $r.IdentityReference.Value) { $issues.Add("lesbar fuer $(ConvertTo-NEMAccountName $r.IdentityReference.Value): $Path"); break }
+            }
+        }
         foreach ($r in $acl.GetAccessRules($true, $IsRoot, [System.Security.Principal.SecurityIdentifier])) {
             $sid = $r.IdentityReference.Value
             if ("$($r.AccessControlType)" -ne 'Allow' -or $script:NEMOkSids -contains $sid -or $sid -eq 'S-1-3-0') { continue }   # S-1-3-0 = ERSTELLER-BESITZER
@@ -83,6 +91,25 @@ function Get-NEMAppDirIssues([string]$Root) {
         }
     } catch { $issues.Add("nicht pruefbar: $($_.Exception.Message)") }
     return $issues.ToArray()
+}
+
+# Gehoert $Path zu den Geheimnis-Dateien des Programmordners $Root?
+function Test-NEMSecretFile([string]$Root, [string]$Path) {
+    $r = [System.IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $f = [System.IO.Path]::GetFullPath($Path)
+    foreach ($s in $script:NEMSecretFiles) { if ([string]::Equals($f, (Join-Path $r $s), [StringComparison]::OrdinalIgnoreCase)) { return $true } }
+    return $false
+}
+
+# Geheimnis-Datei: Besitzer Administratoren, Vererbung aus, nur SYSTEM + Administratoren
+function Set-NEMSecretFileAcl([string]$Path) {
+    $sec = New-Object System.Security.AccessControl.FileSecurity
+    $sec.SetOwner((New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))
+    $sec.SetAccessRuleProtection($true, $false)
+    foreach ($sid in @('S-1-5-18', 'S-1-5-32-544')) {
+        $sec.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier($sid)), [System.Security.AccessControl.FileSystemRights]::FullControl, 'Allow')))
+    }
+    [System.IO.File]::SetAccessControl($Path, $sec)
 }
 
 function ConvertTo-NEMAccountName([string]$Sid) {
@@ -162,8 +189,11 @@ function Protect-NEMAppDir {
                 if ((($a -band $rp) -ne 0) -and $isDir) { continue }   # andere Reparse-Ordner nicht durchlaufen
                 if ($pass -eq 1) {
                     & $takeOver $e
-                    $o = & icacls.exe "$e" /reset /C /Q 2>&1
-                    if ($LASTEXITCODE -ne 0) { throw "Rechte von $e nicht zuruecksetzbar: $o" }
+                    if (-not $isDir -and (Test-NEMSecretFile $Root $e)) { Set-NEMSecretFileAcl $e }   # Geheimnis: nicht lesbar fuer Benutzer
+                    else {
+                        $o = & icacls.exe "$e" /reset /C /Q 2>&1
+                        if ($LASTEXITCODE -ne 0) { throw "Rechte von $e nicht zuruecksetzbar: $o" }
+                    }
                 }
                 if ($isDir) { $stack.Push($e) }
             }
@@ -202,6 +232,86 @@ function Get-NEMToolVersion([string]$Root) {
     return '0.0.0'
 }
 
+# Daten des Tools liegen ab v3.4.0 in Config\ (frueher direkt im Programmordner)
+$script:NEMDataFiles = @('config.json', 'update.json', 'installed.json')
+
+# Pfad einer Datendatei: Config\<Name>; nur wenn dort keine liegt, aber noch die alte im Programmordner, diese
+function Get-NEMDataFile([string]$Root, [string]$Name) {
+    $new = Join-Path (Join-Path $Root 'Config') $Name
+    $old = Join-Path $Root $Name
+    if (-not (Test-Path -LiteralPath $new -PathType Leaf) -and (Test-Path -LiteralPath $old -PathType Leaf)) { return $old }
+    return $new
+}
+
+# Alte Datendateien aus dem Programmordner nach Config\ verschieben. Liegen beide vor (z.B. nach einem Wechsel auf eine
+# aeltere Version und zurueck), gilt die zuletzt geaenderte; die andere bleibt als <Name>.alt im Programmordner.
+# Rueckgabe: Liste der Meldungen (leer = nichts zu tun)
+function Move-NEMDataFiles([string]$Root) {
+    $msgs = New-Object System.Collections.Generic.List[string]
+    $dir = Join-Path $Root 'Config'
+    foreach ($n in $script:NEMDataFiles) {
+        $old = Join-Path $Root $n
+        $new = Join-Path $dir $n
+        if (-not (Test-Path -LiteralPath $old -PathType Leaf)) { continue }
+        try {
+            if (-not (Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+            if (Test-Path -LiteralPath $new -PathType Leaf) {
+                if ((Get-Item -LiteralPath $old -Force).LastWriteTimeUtc -gt (Get-Item -LiteralPath $new -Force).LastWriteTimeUtc) {
+                    Move-Item -LiteralPath $new -Destination "$old.alt" -Force -ErrorAction Stop
+                    Move-Item -LiteralPath $old -Destination $new -Force -ErrorAction Stop
+                    $msgs.Add("$n nach Config\ verschoben (neuer als die dortige, diese liegt jetzt als $n.alt im Programmordner)")
+                } else {
+                    Move-Item -LiteralPath $old -Destination "$old.alt" -Force -ErrorAction Stop
+                    $msgs.Add("$n im Programmordner ist aelter als Config\$n - umbenannt in $n.alt")
+                }
+            } else {
+                Move-Item -LiteralPath $old -Destination $new -ErrorAction Stop
+                $msgs.Add("$n nach Config\ verschoben")
+            }
+        } catch { $msgs.Add("$n nicht nach Config\ verschiebbar: $($_.Exception.Message)") }
+    }
+    return $msgs.ToArray()
+}
+
+# --- GitHub-Token (optional, nur fuer mehr API-Abrufe/h): Config\github-token.dat
+#     DPAPI (LocalMachine: auch der Auto-Pull als SYSTEM kann ihn lesen), Datei nur fuer SYSTEM + Administratoren lesbar
+$script:NEMTokenEntropy = [System.Text.Encoding]::UTF8.GetBytes('HU-NextExam-Manager GitHubToken')
+function Get-NEMGitHubToken([string]$Root) {
+    $f = Join-Path $Root 'Config\github-token.dat'
+    if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { return '' }
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+        $b = [System.Security.Cryptography.ProtectedData]::Unprotect([System.IO.File]::ReadAllBytes($f), $script:NEMTokenEntropy, 'LocalMachine')
+        return ([System.Text.Encoding]::UTF8.GetString($b)).Trim()
+    } catch { return '' }
+}
+# Token speichern ('' = loeschen). Braucht Administratorrechte.
+function Set-NEMGitHubToken([string]$Root, [string]$Token) {
+    $dir = Join-Path $Root 'Config'
+    $f = Join-Path $dir 'github-token.dat'
+    $Token = "$Token".Trim()
+    if (-not $Token) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction Stop }; return }
+    Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null }
+    $enc = [System.Security.Cryptography.ProtectedData]::Protect([System.Text.Encoding]::UTF8.GetBytes($Token), $script:NEMTokenEntropy, 'LocalMachine')
+    # erst leer anlegen und absichern, dann den Inhalt schreiben (nie lesbar fuer Benutzer)
+    $tmp = "$f.tmp"
+    [System.IO.File]::WriteAllBytes($tmp, [byte[]]@())
+    Set-NEMSecretFileAcl $tmp
+    [System.IO.File]::WriteAllBytes($tmp, $enc)
+    Move-Item -LiteralPath $tmp -Destination $f -Force -ErrorAction Stop
+    Set-NEMSecretFileAcl $f
+}
+# Token aus config.json (ToolSettings.GitHubToken, dort lesbar fuer alle Benutzer) in die geschuetzte Datei uebernehmen.
+# Rueckgabe: $true = Config geaendert (Feld geleert) -> speichern
+function Move-NEMGitHubTokenToStore([string]$Root, $Config) {
+    try { $t = "$($Config.ToolSettings.GitHubToken)".Trim() } catch { return $false }
+    if (-not $t -or -not (Test-NEMIsAdmin)) { return $false }
+    Set-NEMGitHubToken -Root $Root -Token $t
+    $Config.ToolSettings.GitHubToken = ''
+    return $true
+}
+
 # Name der Einzelinstanz-Sperre je Programmordner (Global: gilt auch zwischen Sitzungen, z.B. Auto-Pull als SYSTEM)
 function Get-NEMMutexName([string]$Root, [string]$Kind = 'App') {
     $p = [System.IO.Path]::GetFullPath($Root).TrimEnd('\').ToLowerInvariant()
@@ -210,4 +320,5 @@ function Get-NEMMutexName([string]$Root, [string]$Kind = 'App') {
     return "Global\HU-NextExam-Manager_$($Kind)_$h"
 }
 
-Export-ModuleMember -Function Test-NEMIsAdmin, Get-NEMAppDirSkipReason, Get-NEMAppDirIssues, Protect-NEMAppDir, Invoke-NEMAppDirProtection, Get-NEMToolVersion, Get-NEMMutexName
+Export-ModuleMember -Function Test-NEMIsAdmin, Get-NEMAppDirSkipReason, Get-NEMAppDirIssues, Protect-NEMAppDir, Invoke-NEMAppDirProtection, Get-NEMToolVersion, Get-NEMMutexName, `
+    Test-NEMSecretFile, Set-NEMSecretFileAcl, Get-NEMDataFile, Move-NEMDataFiles, Get-NEMGitHubToken, Set-NEMGitHubToken, Move-NEMGitHubTokenToStore
