@@ -4,6 +4,11 @@
 
 Korrekturen aus der Code-Pruefung (alle HOCH-Befunde und mehrere MITTEL-Befunde).
 
+### Wiederhergestellt
+- **Auswertung unter der Clients-Liste** aus v3.2.4 (z.B. `Student: 25 von 28 aktuell (2.1.0.3) - 2x 2.1.0.2`,
+  gruen = alle aktuell, orange = Abweichungen). v3.2.4 war nur als Release veroeffentlicht, nicht im Hauptzweig - v3.3.0 wurde
+  ohne diese Aenderung gebaut.
+
 ### Wichtig nach dem Update
 - **Install-GPOs neu schreiben:** Das neue Startup-Skript (keine Updates waehrend einer Pruefung) wirkt erst, wenn es in
   SYSVOL liegt. Reiter GPO: Tasks markieren, **Install-GPOs**. Der GPO-Status zeigt bis dahin *Skript veraltet*.
@@ -92,6 +97,15 @@ den Schulen aendert sich nichts.
 - **Releases:** Ein Push auf main mit neuer Version legt das Vorab-Release (Kanal Test) automatisch an, Text aus diesem
   CHANGELOG; die automatischen Tests haengen die Pruefsummen-Datei an und pruefen danach den Update-Weg einschliesslich
   abgebrochenem Update und Aufraeumen. Es bleiben die letzten 10 Releases erhalten (das aktuelle stabile Release immer).
+
+## v3.2.4 (2026-10-02)
+
+### Neu
+- **Auswertung im Clients-Reiter** unter der Liste, je Rolle: wie viele Clients auf dem
+  aktuellen Stand sind (hoechste Zielversion im Share) und wie viele auf welcher anderen
+  Version bzw. nicht installiert, z.B.
+  `Student: 25 von 28 aktuell (2.1.0.3) - 2x 2.1.0.2, 1x nicht installiert`.
+  Gruen = alle aktuell, orange = Abweichungen.
 
 ## v3.2.3 (2026-10-02)
 

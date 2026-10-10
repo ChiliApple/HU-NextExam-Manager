@@ -3219,6 +3219,36 @@ $script:lblClientShare   = Get-UI 'lblClientShare'
 $script:btnClientRefresh = Get-UI 'btnClientRefresh'
 $script:lstClients       = Get-UI 'lstClients'
 $script:btnClientClear   = Get-UI 'btnClientClear'
+$script:lblClientSummary = Get-UI 'lblClientSummary'
+
+# Auswertung: je Rolle wie viele auf dem aktuellen Stand (hoechste Zielversion im Share) und wie viele auf welcher Version
+function Get-NEMVer([string]$V) { $o = $null; if ([Version]::TryParse(("$V".Trim() -replace '[^\d\.]', ''), [ref]$o)) { return $o }; return $null }
+function Format-NEMClientSummary($Rows) {
+    $rows = @($Rows | Where-Object { $_ })
+    if (-not $rows.Count) { return [pscustomobject]@{ Text = 'Keine Clients im Status-Share.'; AllOk = $true } }
+    $parts = @(); $allOk = $true
+    foreach ($g in @($rows | Group-Object { if ("$($_.Role)" -in 'Student', 'Teacher') { "$($_.Role)" } else { '?' } } | Sort-Object @{ Expression = { if ($_.Name -eq '?') { 'zzz' } else { $_.Name } } })) {
+        $items = @($g.Group)
+        if ($g.Name -eq '?') { $parts += "Fehlerhaft/unlesbar: $($items.Count)"; $allOk = $false; continue }
+        # aktueller Stand = hoechste Zielversion (Version im Share), sonst hoechste installierte
+        $cur = @($items | ForEach-Object { Get-NEMVer $_.Target } | Where-Object { $_ } | Sort-Object -Descending)[0]
+        if (-not $cur) { $cur = @($items | ForEach-Object { Get-NEMVer $_.Installed } | Where-Object { $_ } | Sort-Object -Descending)[0] }
+        $ok = @($items | Where-Object { $v = Get-NEMVer $_.Installed; $v -and $cur -and $v -eq $cur }).Count
+        $rest = @($items | Where-Object { $v = Get-NEMVer $_.Installed; -not ($v -and $cur -and $v -eq $cur) } |
+            Group-Object { $v = Get-NEMVer $_.Installed; if ($v) { "$v" } elseif ("$($_.Installed)".Trim() -and "$($_.Installed)" -ne '-') { "$($_.Installed)" } else { 'nicht installiert' } } |
+            Sort-Object @{ Expression = { $x = Get-NEMVer $_.Name; if ($x) { $x } else { [Version]'0.0' } } } -Descending |
+            ForEach-Object { "$($_.Count)x $($_.Name)" })
+        if ($rest.Count) { $allOk = $false }
+        $parts += "$($g.Name): $ok von $($items.Count) aktuell ($(if ($cur) { $cur } else { '?' }))$(if ($rest.Count) { ' - ' + ($rest -join ', ') })"
+    }
+    return [pscustomobject]@{ Text = ($parts -join '   |   '); AllOk = $allOk }
+}
+function Set-NEMClientSummary($Rows) {
+    if (-not $script:lblClientSummary) { return }
+    $s = Format-NEMClientSummary $Rows
+    $script:lblClientSummary.Text = $s.Text
+    $script:lblClientSummary.Foreground = $(if ($s.AllOk) { '#6CCB5F' } else { '#F0A30A' })
+}
 
 # Mehrere Tasks mit demselben Status-Share (z.B. zwei Schulen auf einem gemeinsamen Schulserver):
 # Die Status-JSONs enthalten keinen Task -> pro Task nur Rechner aus den AD-OUs dieses Tasks anzeigen.
@@ -3294,6 +3324,7 @@ function Get-NEMTaskClientRows($Task) {
 
 function Refresh-ClientsList {
     $t = $script:cmbClientTask.SelectedItem
+    if ($script:lblClientSummary) { $script:lblClientSummary.Text = '' }
     if (-not $t) { $script:lstClients.ItemsSource = @(); $script:lblClientShare.Text = ''; return }
     if (-not $t.StatusSharePath) {
         $script:lstClients.ItemsSource = @()
@@ -3303,6 +3334,7 @@ function Refresh-ClientsList {
     try {
         $i = Get-NEMTaskClientRows $t
         $script:lstClients.ItemsSource = @($i.Rows)
+        Set-NEMClientSummary $i.Rows
         if (-not $i.Shared) { $script:lblClientShare.Text = $t.StatusSharePath }
         elseif ($i.Err) { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, NICHT gefiltert ($($i.Err))" }
         else { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, gefiltert nach $($i.Source): $(@($i.Rows).Count) von $($i.Total)" }
