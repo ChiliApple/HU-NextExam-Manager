@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Tool-Update fuer HU-NextExam-Manager: Releases, Kanal Stabil/Test, Pruefsumme (SHA256), Signatur (PKCS#7) und Release signieren/freigeben (Herausgeber).
@@ -9,7 +9,7 @@
 #>
 #region HMUpdateLib
 # Gemeinsame Update-Funktionen - identisch in Pull.ps1 und Modules\Update.psm1 (die automatischen Tests pruefen das)
-# Vorlage: HUMig (Functions\Core-Update.ps1) - gleiche Funktionsnamen, gleiches Signatur-Zertifikat
+# Vorlage: HUMig v2.0.99 (Functions\Core-Update.ps1) - gleiche Funktionsnamen, gleiches Signatur-Zertifikat
 $script:HMManifestName  = 'HU-NextExam-Manager-files.sha256'
 $script:HMSignatureName = 'HU-NextExam-Manager-files.sha256.p7s'
 $script:HMUserAgent     = 'HU-NextExam-Manager'
@@ -77,7 +77,10 @@ function Get-HMReleases([string]$Owner, [string]$Repo, [string]$Token) {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
     $h = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = $script:HMUserAgent }
     if ($Token) { $h.Authorization = "token $Token" }
-    $raw = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases?per_page=100" -Headers $h -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+    # GitHub liefert die Liste mit "Cache-Control: max-age=60" - Proxys/Zwischenspeicher wuerden z.B. eine gerade
+    # angehaengte Signatur bis zu 1 Minute nicht zeigen. Darum: no-cache + eindeutige Adresse je Abfrage
+    $h['Cache-Control'] = 'no-cache'
+    $raw = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases?per_page=100&nocache=$([DateTime]::UtcNow.Ticks)" -Headers $h -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
     return @(ConvertTo-HMReleaseList $raw)
 }
 # Kanal Stabil = nur freigegebene Releases, Test = auch Vorab-Releases; jeweils die hoechste Version
@@ -88,14 +91,25 @@ function Select-HMRelease($Releases, [string]$Channel, [switch]$SignedOnly) {
     if ($SignedOnly) { $l = @($l | Where-Object { $_.ManifestUrl -and $_.SignatureUrl }) }
     return (@($l | Sort-Object Version -Descending) | Select-Object -First 1)
 }
-# Release-Datei (Pruefsummen/Signatur) als Bytes laden - mit Token ueber die API (private Repos)
+# Release-Datei (Pruefsummen/Signatur) als Bytes laden - mit Token ueber die API (private Repos).
+# Ausweichweg: liefert der Download-Link von github.com einen Fehler (z.B. 503), wird dieselbe Datei ueber die API geladen
+# (gleicher Inhalt; die Echtheit sichert ohnehin die Signatur/Pruefsumme)
 function Get-HMReleaseAsset([string]$Url, [string]$ApiUrl, [string]$Token) {
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try {
-        if ($Token -and $ApiUrl) { Invoke-WebRequest $ApiUrl -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent; Authorization = "token $Token" } -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop }
-        else { Invoke-WebRequest $Url -Headers @{ 'User-Agent' = $script:HMUserAgent } -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop }
-        return ,([System.IO.File]::ReadAllBytes($tmp))
-    } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    $tries = @()
+    if ($Token -and $ApiUrl) { $tries += , @($ApiUrl, @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent; Authorization = "token $Token" }) }
+    if ($Url) { $tries += , @($Url, @{ 'User-Agent' = $script:HMUserAgent }) }
+    if ($ApiUrl) { $tries += , @($ApiUrl, @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent }) }
+    $last = $null
+    foreach ($t in $tries) {
+        $tmp = [System.IO.Path]::GetTempFileName()
+        try {
+            Invoke-WebRequest $t[0] -Headers $t[1] -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop
+            return ,([System.IO.File]::ReadAllBytes($tmp))
+        } catch { $last = $_ }
+        finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
+    if ($last) { throw $last }
+    throw 'keine Download-Adresse'
 }
 # Pruefsummen-Datei (sha256sum-Format: "<hash>  <pfad>") -> Hashtable Pfad -> Hash (klein)
 function ConvertFrom-HMManifest([string]$Text) {

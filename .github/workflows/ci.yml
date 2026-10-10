@@ -1,15 +1,17 @@
-# Automatische Tests fuer HU-NextExam-Manager (Windows PowerShell 5.1) und Pruefsummen-Datei fuer Releases.
-# - bei jedem Push/Pull-Request: Pruefungen (Syntax, XAML, Steuerelemente, Update-Bibliothek, PSScriptAnalyzer, Pester)
-# - bei einem neuen Release: zusaetzlich HU-NextExam-Manager-files.sha256 erstellen und an das Release haengen
-#   (nur wenn die Pruefungen bestanden sind) und den Update-Weg testen (Pull.ps1 laedt genau dieses Release und prueft alle Pruefsummen)
-# - Tag v* pushen (ohne Release): die CI legt das Vorab-Release (Kanal Test) selbst an, Notizen aus Docs/CHANGELOG.md
-# - Signatur: haengt der Herausgeber danach an (Tool: Rechtsklick auf Update > Release signieren), erst dann wird das Release angeboten
+# Automatische Tests fuer HU-NextExam-Manager (Windows PowerShell 5.1) und Releases (Aufbau wie HU-MultiTenant und HUMig).
+# - bei jedem Push/Pull-Request: Pruefungen (Syntax, BOM, XAML, Steuerelemente, Update-Bibliothek, PSScriptAnalyzer, Pester) - blockierend
+# - Push auf main mit neuer Version (Config/version.json, Tag existiert noch nicht):
+#   Vorab-Release v<Version> (Kanal Test) automatisch anlegen, Text aus Docs/CHANGELOG.md, HU-NextExam-Manager-files.sha256 anhaengen
+# - von Hand veroeffentlichtes Release: HU-NextExam-Manager-files.sha256 anhaengen
+# - danach jeweils den Update-Weg testen (Pull.ps1 laedt genau dieses Release und prueft alle Pruefsummen, dann ein Update-Lauf
+#   mit abgebrochenem Vorgaenger-Update, veralteter Datei und eigenen Dateien)
+# - Signatur + Freigabe macht der Herausgeber im Tool (Rechtsklick auf Update > Release signieren / Release freigeben),
+#   erst dann wird das Release den Installationen angeboten
 name: CI
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   release:
     types: [published]
@@ -18,64 +20,108 @@ on:
 permissions:
   contents: write
 
+# neuer Push bricht einen noch laufenden Lauf desselben Pull-Requests ab - auf main nie (ein abgebrochener Lauf
+# koennte ein Release ohne Pruefsummen-Datei hinterlassen)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Pruefungen (Windows PowerShell 5.1)
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
       - name: Pruefungen
         shell: powershell
+        timeout-minutes: 15
         run: .\.github\tests\Invoke-CITests.ps1
 
-  manifest:
-    name: Pruefsummen-Datei zum Release
-    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
+  release:
+    name: Release + Pruefsummen-Datei
+    if: github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: test
     runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+    timeout-minutes: 10
+    outputs:
+      tag: ${{ steps.rel.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
-      - name: Vorab-Release anlegen (nur beim Tag-Push, falls noch keines existiert)
-        if: github.event_name != 'release'
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+      - name: Release bestimmen bzw. als Vorab-Release anlegen
+        id: rel
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "Release $TAG existiert"; exit 0; fi
-          python3 - "$TAG" > notes.md <<'PY'
-          import sys, re
-          v = sys.argv[1].lstrip('vV')
-          s = open('Docs/CHANGELOG.md', encoding='utf-8').read()
-          m = re.search(r'^## v' + re.escape(v) + r'\b.*?$\n(.*?)(?=^## v|\Z)', s, re.S | re.M)
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          V=$(python3 -c "import json;print(json.load(open('Config/version.json',encoding='utf-8-sig'))['version'])")
+          if [ -z "$V" ]; then echo "Version in Config/version.json nicht gefunden"; exit 1; fi
+          T="v$V"
+          if gh release view "$T" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Release gibt es schon - fehlt die Pruefsummen-Datei (z.B. abgebrochener Lauf), wird sie nachgereicht
+            if gh release view "$T" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -qx 'HU-NextExam-Manager-files.sha256'; then
+              echo "Release $T gibt es schon - nichts anzulegen"; echo "tag=" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "Release $T ohne Pruefsummen-Datei - wird nachgereicht" >> "$GITHUB_STEP_SUMMARY"
+            echo "tag=$T" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Abschnitt "## v<Version>" aus Docs/CHANGELOG.md als Release-Text
+          python3 - "$V" > notes.md <<'PY'
+          import re, sys
+          v = sys.argv[1]
+          t = open('Docs/CHANGELOG.md', encoding='utf-8-sig').read()
+          m = re.search(r'^## v' + re.escape(v) + r'\b[^\n]*\n(.*?)(?=^## v|\Z)', t, re.S | re.M)
           print(m.group(1).strip() if m else 'Version ' + v)
           PY
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false --title "$TAG" --notes-file notes.md
-      - name: HU-NextExam-Manager-files.sha256 erstellen
-        run: python3 .github/scripts/manifest.py HU-NextExam-Manager-files.sha256
-      - name: An das Release haengen
+          gh release create "$T" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false --title "$T" --notes-file notes.md
+          echo "Vorab-Release $T angelegt" >> "$GITHUB_STEP_SUMMARY"
+          echo "tag=$T" >> "$GITHUB_OUTPUT"
+      - name: HU-NextExam-Manager-files.sha256 erstellen und anhaengen
+        if: steps.rel.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" HU-NextExam-Manager-files.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+          TAG: ${{ steps.rel.outputs.tag }}
+        run: |
+          python3 .github/scripts/manifest.py HU-NextExam-Manager-files.sha256
+          gh release upload "$TAG" HU-NextExam-Manager-files.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Alte Releases entfernen (nur die letzten 10 behalten)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: 10
+        run: |
+          # neueste zuerst; die aktuelle stabile Version (Latest) bleibt immer erhalten
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .tag_name 2>/dev/null || true)
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate -q '.[] | "\(.created_at) \(.tag_name)"' | sort -r | awk '{print $2}' > all.txt
+          n=0
+          while read -r T; do
+            n=$((n+1))
+            [ "$n" -le "$KEEP" ] && continue
+            [ "$T" = "$LATEST" ] && { echo "behalte $T (Latest)"; continue; }
+            gh release delete "$T" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag && echo "- geloescht: $T" >> "$GITHUB_STEP_SUMMARY"
+          done < all.txt
 
   pull:
     name: Update-Weg testen (Pull.ps1)
-    if: github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v')
-    needs: manifest
+    needs: release
+    if: needs.release.outputs.tag != ''
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+          ref: ${{ needs.release.outputs.tag }}
       - name: Pull.ps1 laedt das Release und prueft alle Pruefsummen
         shell: powershell
         env:
           HUNEM_GITHUB_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
+          TAG: ${{ needs.release.outputs.tag }}
         run: |
           $t = Join-Path $env:RUNNER_TEMP 'HU-NextExam-Manager'
           $v = $env:TAG -replace '^v', ''
@@ -88,4 +134,42 @@ jobs:
           if ("$($i.Version)" -ne $v) { throw "installiert: $($i.Version), erwartet $v" }
           if ("$($i.Check)" -notlike 'Pruefsumme*') { throw "nicht geprueft: $($i.Check)" }
           if (-not (Test-Path (Join-Path $t 'Modules\Update.psm1'))) { throw 'Modules\Update.psm1 fehlt nach Pull' }
+          if (Test-Path (Join-Path $t '.github')) { throw '.github wurde mitinstalliert' }
           "Pull OK: $($i.Version) - $($i.Check) - $($i.Files) Dateien"
+          # zweiter Lauf = Update ueber bestehende Installation:
+          #   veraltete Programmdatei muss weg, Config und eigene Dateien bleiben, Pfade ausserhalb werden ignoriert,
+          #   ein abgebrochenes Update (Journal) wird zuerst zurueckgestellt, ein alter .github-Ordner wird entfernt, danach keine Reste
+          $old = Join-Path $t 'Modules\Alt-Entfernt.psm1'; 'alt' | Set-Content -LiteralPath $old -Encoding UTF8
+          $keep = Join-Path $t 'Config\behalten.txt'; 'bleibt' | Set-Content -LiteralPath $keep -Encoding UTF8
+          $own = Join-Path $t 'Modules\Eigene.psm1'; 'eigen' | Set-Content -LiteralPath $own -Encoding UTF8
+          $outside = Join-Path $env:RUNNER_TEMP 'ausserhalb.txt'; 'aussen' | Set-Content -LiteralPath $outside -Encoding UTF8
+          $gh = Join-Path $t '.github\workflows'; New-Item -ItemType Directory -Path $gh -Force | Out-Null; 'alt' | Set-Content -LiteralPath (Join-Path $gh 'ci.yml') -Encoding UTF8
+          $cfgFile = Join-Path $t 'config.json'; '{ "test": true }' | Set-Content -LiteralPath $cfgFile -Encoding UTF8
+          $i.FileList = @($i.FileList) + @('Modules/Alt-Entfernt.psm1', 'Config/behalten.txt', '../ausserhalb.txt')
+          $i | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $t 'installed.json') -Encoding UTF8
+          # abgebrochenes Update mit ZWEI Dateien vortaeuschen (ein Eintrag allein wuerde das Array-Verhalten von PS 5.1 verdecken)
+          $main = Join-Path $t 'HU-NextExam-Manager.ps1'
+          $mod = Join-Path $t 'Modules\Update.psm1'
+          Move-Item -LiteralPath $main -Destination "$main.pullold"; 'kaputt' | Set-Content -LiteralPath $main -Encoding UTF8
+          $modHash = (Get-FileHash -LiteralPath $mod -Algorithm SHA256).Hash
+          Move-Item -LiteralPath $mod -Destination "$mod.pullold"
+          ConvertTo-Json -InputObject @("$main", "$mod") | Set-Content -LiteralPath (Join-Path $t 'Config\pull-journal.json') -Encoding UTF8
+          $out = powershell -NoProfile -ExecutionPolicy Bypass -File .\Pull.ps1 -Target $t -Version $v -NoStart -NonInteractive -Owner $env:GITHUB_REPOSITORY_OWNER -Repo ($env:GITHUB_REPOSITORY -split '/')[1] 2>&1 | Out-String
+          $c = $LASTEXITCODE
+          $out
+          if ($c -ne 0) { throw "Pull.ps1 (Update) Exitcode $c" }
+          if ($out -notmatch 'abgebrochen') { throw 'Journal wurde nicht ausgewertet' }
+          if ((Get-Content -LiteralPath $main -Raw) -match 'kaputt') { throw 'HU-NextExam-Manager.ps1 nicht erneuert' }
+          if ($out -notmatch [regex]::Escape("zurueckgestellt: $mod")) { throw 'Journal: Modules\Update.psm1 nicht zurueckgestellt (Array-Auswertung?)' }
+          if (-not (Test-Path -LiteralPath $mod) -or (Get-FileHash -LiteralPath $mod -Algorithm SHA256).Hash -ne $modHash) { throw 'Modules\Update.psm1 fehlt oder falsch' }
+          if (Test-Path -LiteralPath $old) { throw 'veraltete Datei nicht entfernt' }
+          if (-not (Test-Path -LiteralPath $keep)) { throw 'Datei in Config wurde entfernt' }
+          if (-not (Test-Path -LiteralPath $own)) { throw 'eigene Datei wurde entfernt' }
+          if (-not (Test-Path -LiteralPath $outside)) { throw 'Datei ausserhalb wurde entfernt' }
+          if (-not (Test-Path -LiteralPath $cfgFile)) { throw 'config.json wurde entfernt' }
+          if (Test-Path -LiteralPath (Join-Path $t '.github')) { throw 'alter .github-Ordner nicht entfernt' }
+          $rest = @(Get-ChildItem -LiteralPath $t -Recurse -File -Force | Where-Object { $_.Name -match '\.(pullold|pulltmp)$' -or $_.Name -eq 'pull-journal.json' })
+          if ($rest.Count) { throw "Reste: $(($rest | ForEach-Object Name) -join ', ')" }
+          $i = Get-Content (Join-Path $t 'installed.json') -Raw | ConvertFrom-Json
+          if ("$($i.Version)" -ne $v -or -not @($i.FileList).Count) { throw "installed.json nach Update falsch: $($i.Version)" }
+          "Update OK: Journal zurueckgestellt, veraltete Datei entfernt, Config/eigene Dateien unberuehrt, .github entfernt, keine Reste"

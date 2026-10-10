@@ -25,3 +25,7 @@ HU-NextExam-Manager.exe
 update.json
 installed.json
 *.pulltmp
+
+# Abbruch-Journal / Sicherungen von Pull.ps1
+*.pullold
+Config/pull-journal.json

@@ -19,8 +19,12 @@
         (offizielle Quelle: Fingerabdruck eingebaut; eigene Quelle: update.json "SignerThumbprint").
         Abschalten nur bewusst mit update.json "AllowUnsigned": true (Settings > Tool-Update).
       - zuerst werden ALLE Dateien geladen und geprueft, erst dann ersetzt - bei einer Abweichung bleibt alles unveraendert
+      - Ersetzen mit Ruecksicherung (*.pullold) und Journal (Config\pull-journal.json): scheitert ein Schritt, wird alles
+        zurueckgestellt; bricht Pull mittendrin ab (Absturz, Strom), stellt der naechste Pull-Lauf den alten Stand wieder her
+      - Dateien, die es im neuen Stand nicht mehr gibt, werden entfernt - nur solche, die frueher per Pull installiert wurden
+        (Liste in installed.json). Eigene Dateien und die Ordner Config\ und Logs\ bleiben immer unberuehrt.
 
-    Lokale Daten bleiben unangetastet: config.json, update.json, installed.json, Logs, HU-NextExam-Manager.exe (Starter).
+    Lokale Daten bleiben unangetastet: config.json, update.json, installed.json, Config\, Logs\, HU-NextExam-Manager.exe (Starter).
     GitHub-Token (optional, nur fuer mehr API-Aufrufe/h): config.json > ToolSettings.GitHubToken.
 .NOTES
     Manuell: powershell -ExecutionPolicy Bypass -File Pull.ps1 [-Version 3.2.0] [-Channel Test] [-NoStart]
@@ -43,7 +47,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::S
 
 #region HMUpdateLib
 # Gemeinsame Update-Funktionen - identisch in Pull.ps1 und Modules\Update.psm1 (die automatischen Tests pruefen das)
-# Vorlage: HUMig (Functions\Core-Update.ps1) - gleiche Funktionsnamen, gleiches Signatur-Zertifikat
+# Vorlage: HUMig v2.0.99 (Functions\Core-Update.ps1) - gleiche Funktionsnamen, gleiches Signatur-Zertifikat
 $script:HMManifestName  = 'HU-NextExam-Manager-files.sha256'
 $script:HMSignatureName = 'HU-NextExam-Manager-files.sha256.p7s'
 $script:HMUserAgent     = 'HU-NextExam-Manager'
@@ -111,7 +115,10 @@ function Get-HMReleases([string]$Owner, [string]$Repo, [string]$Token) {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
     $h = @{ Accept = 'application/vnd.github+json'; 'User-Agent' = $script:HMUserAgent }
     if ($Token) { $h.Authorization = "token $Token" }
-    $raw = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases?per_page=100" -Headers $h -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+    # GitHub liefert die Liste mit "Cache-Control: max-age=60" - Proxys/Zwischenspeicher wuerden z.B. eine gerade
+    # angehaengte Signatur bis zu 1 Minute nicht zeigen. Darum: no-cache + eindeutige Adresse je Abfrage
+    $h['Cache-Control'] = 'no-cache'
+    $raw = Invoke-RestMethod "https://api.github.com/repos/$Owner/$Repo/releases?per_page=100&nocache=$([DateTime]::UtcNow.Ticks)" -Headers $h -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
     return @(ConvertTo-HMReleaseList $raw)
 }
 # Kanal Stabil = nur freigegebene Releases, Test = auch Vorab-Releases; jeweils die hoechste Version
@@ -122,14 +129,25 @@ function Select-HMRelease($Releases, [string]$Channel, [switch]$SignedOnly) {
     if ($SignedOnly) { $l = @($l | Where-Object { $_.ManifestUrl -and $_.SignatureUrl }) }
     return (@($l | Sort-Object Version -Descending) | Select-Object -First 1)
 }
-# Release-Datei (Pruefsummen/Signatur) als Bytes laden - mit Token ueber die API (private Repos)
+# Release-Datei (Pruefsummen/Signatur) als Bytes laden - mit Token ueber die API (private Repos).
+# Ausweichweg: liefert der Download-Link von github.com einen Fehler (z.B. 503), wird dieselbe Datei ueber die API geladen
+# (gleicher Inhalt; die Echtheit sichert ohnehin die Signatur/Pruefsumme)
 function Get-HMReleaseAsset([string]$Url, [string]$ApiUrl, [string]$Token) {
-    $tmp = [System.IO.Path]::GetTempFileName()
-    try {
-        if ($Token -and $ApiUrl) { Invoke-WebRequest $ApiUrl -Headers @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent; Authorization = "token $Token" } -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop }
-        else { Invoke-WebRequest $Url -Headers @{ 'User-Agent' = $script:HMUserAgent } -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop }
-        return ,([System.IO.File]::ReadAllBytes($tmp))
-    } finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    $tries = @()
+    if ($Token -and $ApiUrl) { $tries += , @($ApiUrl, @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent; Authorization = "token $Token" }) }
+    if ($Url) { $tries += , @($Url, @{ 'User-Agent' = $script:HMUserAgent }) }
+    if ($ApiUrl) { $tries += , @($ApiUrl, @{ Accept = 'application/octet-stream'; 'User-Agent' = $script:HMUserAgent }) }
+    $last = $null
+    foreach ($t in $tries) {
+        $tmp = [System.IO.Path]::GetTempFileName()
+        try {
+            Invoke-WebRequest $t[0] -Headers $t[1] -UseBasicParsing -TimeoutSec 60 -OutFile $tmp -ErrorAction Stop
+            return ,([System.IO.File]::ReadAllBytes($tmp))
+        } catch { $last = $_ }
+        finally { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
+    if ($last) { throw $last }
+    throw 'keine Download-Adresse'
 }
 # Pruefsummen-Datei (sha256sum-Format: "<hash>  <pfad>") -> Hashtable Pfad -> Hash (klein)
 function ConvertFrom-HMManifest([string]$Text) {
@@ -182,6 +200,30 @@ if (-not $Target) {
     }
 } else { $mode = 'Ziel per -Target' }
 $Target = $Target.TrimEnd('\')
+
+# --- abgebrochenes Update (Journal vorhanden): bisherige Dateien aus *.pullold zuruecksetzen
+$jrDir = Join-Path $Target 'Config'
+$jr = Join-Path $jrDir 'pull-journal.json'
+if (Test-Path -LiteralPath $jr) {
+    Write-Host '[WARN] Letztes Update wurde abgebrochen - stelle bisherige Dateien wieder her...' -ForegroundColor Yellow
+    # Erst zuweisen, dann durchlaufen: PS 5.1 gibt ein JSON-Array aus ConvertFrom-Json als EIN Objekt aus
+    $jl = $null
+    try { $jl = Get-Content -LiteralPath $jr -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { Stop-HMPull "Journal $jr nicht lesbar ($($_.Exception.Message)) - bitte *.pullold im Tool-Ordner pruefen." }
+    $jbad = 0
+    foreach ($jp in @($jl)) {
+        if (-not "$jp") { continue }
+        $jo = "$jp.pullold"
+        if (Test-Path -LiteralPath $jo) {
+            try { Move-Item -LiteralPath $jo -Destination "$jp" -Force -ErrorAction Stop; Write-Host "  zurueckgestellt: $jp" -ForegroundColor DarkGray }
+            catch { $jbad++; Write-Host "  [WARN] $($jp): $($_.Exception.Message)" -ForegroundColor Yellow }
+        }
+        Remove-Item -LiteralPath "$jp.pulltmp" -Force -ErrorAction SilentlyContinue
+    }
+    # Journal nur loeschen, wenn alles zurueckgestellt ist - sonst bleibt die Start-Sperre bestehen
+    if ($jbad) { Stop-HMPull "$jbad Datei(en) konnten nicht zurueckgestellt werden (gesperrt?) - Tool schliessen und Pull erneut ausfuehren." }
+    Remove-Item -LiteralPath $jr -Force -ErrorAction SilentlyContinue
+}
 
 # --- Update-Einstellungen (update.json im Tool-Ordner)
 $cfgDir = $Target
@@ -339,15 +381,72 @@ if ($fail) {
     Stop-HMPull "$fail Datei(en) nicht geladen oder Pruefsumme falsch - es wurde NICHTS veraendert, das Tool bleibt auf der bisherigen Version."
 }
 
-# --- 5. ersetzen
-$ok = 0; $repl = 0
+# --- 5. ersetzen - mit Ruecksicherung: jede bisherige Datei wird erst zu *.pullold umbenannt;
+#        scheitert ein Schritt, wird alles zurueckgestellt (nie halb aktualisiert).
+#        Bricht Pull mittendrin ab (Absturz, Strom), stellt der naechste Pull-Lauf anhand des Journals zurueck.
+$journal = $jr
+$moved = New-Object System.Collections.Generic.List[object]   # @(Ziel, Sicherung oder '')
+$repl = 0; $lastErr = ''
+try { if (-not (Test-Path -LiteralPath $jrDir)) { New-Item -ItemType Directory -Path $jrDir -Force | Out-Null } } catch { }
+try { ConvertTo-Json -InputObject @($staged | ForEach-Object { "$($_[1])" }) | Set-Content -LiteralPath $journal -Encoding UTF8 -ErrorAction Stop }
+catch {
+    foreach ($s in $staged) { Remove-Item -LiteralPath $s[0] -Force -ErrorAction SilentlyContinue }
+    Stop-HMPull "Journal nicht schreibbar ($($_.Exception.Message)) - es wurde NICHTS veraendert."
+}
 foreach ($s in $staged) {
-    $done = $false; $lastErr = ''
+    $old = "$($s[1]).pullold"
+    $done = $false
+    $had = Test-Path -LiteralPath $s[1]      # einmal vor den Wiederholungen bestimmen
+    $backedUp = $false                       # bisherige Datei liegt gerade als *.pullold
     for ($try = 1; $try -le 5 -and -not $done; $try++) {
-        try { Move-Item -LiteralPath $s[0] -Destination $s[1] -Force; $done = $true } catch { $lastErr = $_.Exception.Message; Start-Sleep -Seconds 1 }
+        try {
+            if ($had -and -not $backedUp) { Move-Item -LiteralPath $s[1] -Destination $old -Force; $backedUp = $true }
+            try { Move-Item -LiteralPath $s[0] -Destination $s[1] -Force }
+            catch { if ($backedUp) { try { Move-Item -LiteralPath $old -Destination $s[1] -Force; $backedUp = $false } catch { } }; throw }
+            $moved.Add(@($s[1], $(if ($had) { $old } else { '' })))
+            $done = $true
+        } catch { $lastErr = $_.Exception.Message; Start-Sleep -Seconds 1 }
     }
-    if ($done) { try { Unblock-File -LiteralPath $s[1] -ErrorAction SilentlyContinue } catch { }; $ok++ }
-    else { Remove-Item -LiteralPath $s[0] -Force -ErrorAction SilentlyContinue; Write-Host "  $($s[1]): nicht ersetzbar ($lastErr)" -ForegroundColor Red; $repl++ }
+    if (-not $done) {
+        if ($backedUp) { try { Move-Item -LiteralPath $old -Destination $s[1] -Force } catch { Write-Host "  [WARN] $($s[1]): Sicherung nicht zurueckgestellt ($($_.Exception.Message))" -ForegroundColor Yellow } }
+        Write-Host "  $($s[1]): nicht ersetzbar ($lastErr)" -ForegroundColor Red; $repl++; break
+    }
+}
+if ($repl) {
+    # zurueckstellen (umgekehrte Reihenfolge): neue Dateien entfernen, Sicherungen zurueck
+    for ($k = $moved.Count - 1; $k -ge 0; $k--) {
+        $m = $moved[$k]
+        try { if ($m[1]) { Move-Item -LiteralPath $m[1] -Destination $m[0] -Force } else { Remove-Item -LiteralPath $m[0] -Force } }
+        catch { Write-Host "  [WARN] $($m[0]): nicht zurueckgestellt ($($_.Exception.Message))" -ForegroundColor Yellow }
+    }
+    foreach ($s in $staged) { Remove-Item -LiteralPath $s[0] -Force -ErrorAction SilentlyContinue }
+    Remove-Item -LiteralPath $journal -Force -ErrorAction SilentlyContinue
+    Stop-HMPull "Eine Datei war gesperrt ($lastErr) - alles wurde zurueckgestellt, das Tool bleibt auf der bisherigen Version. Tool schliessen und Pull erneut ausfuehren."
+}
+# Abschluss: zuerst das Journal loeschen (ab hier gilt der neue Stand), dann die Sicherungen.
+# Umgekehrt koennte ein Abbruch beim Aufraeumen einen Mischstand aus alt und neu herstellen.
+Remove-Item -LiteralPath $journal -Force -ErrorAction SilentlyContinue
+foreach ($m in $moved) {
+    try { Unblock-File -LiteralPath $m[0] -ErrorAction SilentlyContinue } catch { }
+    if ($m[1]) { Remove-Item -LiteralPath $m[1] -Force -ErrorAction SilentlyContinue }
+}
+$ok = $moved.Count
+
+# --- 6. Dateien entfernen, die es im neuen Stand nicht mehr gibt - nur solche, die frueher per Pull installiert wurden
+#        (Liste in installed.json). Eigene Dateien und die Datenordner bleiben immer unberuehrt.
+$newFiles = @($files | ForEach-Object { "$($_.path)" })
+$instFile = Join-Path $cfgDir 'installed.json'
+$prevFiles = @()
+try { if (Test-Path -LiteralPath $instFile) { $pi = Get-Content -LiteralPath $instFile -Raw -Encoding UTF8 | ConvertFrom-Json; if ($pi.PSObject.Properties['FileList']) { $prevFiles = @($pi.FileList) } } } catch { }
+$removedOld = 0
+$keepDirs = '^(Config|Logs)/'
+$rootFull = [IO.Path]::GetFullPath($Target).TrimEnd('\') + '\'
+foreach ($oldPath in @($prevFiles | ForEach-Object { "$_" } | Where-Object { $_ -and $newFiles -notcontains $_ -and $_ -notmatch $keepDirs -and $_ -notmatch '(^|/)\.\.(/|$)' -and $_ -notmatch '^[\\/]|:' })) {
+    $p = [IO.Path]::GetFullPath((Join-Path $Target ($oldPath -replace '/', '\')))
+    if (-not $p.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    if (Test-Path -LiteralPath $p -PathType Leaf) {
+        try { Remove-Item -LiteralPath $p -Force; $removedOld++; Write-Host "  entfernt (nicht mehr im Programm): $oldPath" -ForegroundColor DarkGray } catch { }
+    }
 }
 
 # Migration 0.8 -> 0.9: alte Files im Root entfernen (sind jetzt in Unterordnern)
@@ -355,16 +454,25 @@ foreach ($m in @('icon.ico', 'config.json.example', 'Start.bat', 'CHANGELOG.md')
     $old = Join-Path $Target $m
     if (Test-Path -LiteralPath $old) { try { Remove-Item -LiteralPath $old -Force -ErrorAction Stop; Write-Host "  Migration: $m entfernt (jetzt in Assets\ / Docs\)" -ForegroundColor Yellow } catch { } }
 }
+# Migration: alte Installationen haben den Ordner .github mitgeladen (gehoert nur ins Repo, nie in eine Installation).
+# Nicht in einer Entwickler-Arbeitskopie (.git vorhanden).
+$ghDir = Join-Path $Target '.github'
+if ((Test-Path -LiteralPath $ghDir -PathType Container) -and -not (Test-Path -LiteralPath (Join-Path $Target '.git'))) {
+    $ghAttr = [System.IO.File]::GetAttributes($ghDir)
+    if (($ghAttr -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+        try { Remove-Item -LiteralPath $ghDir -Recurse -Force -ErrorAction Stop; Write-Host '  Migration: Ordner .github entfernt (gehoert nicht in eine Installation)' -ForegroundColor Yellow } catch { }
+    }
+}
 
 try {
     [pscustomobject][ordered]@{
         Version = $(if ($useBranch) { "Branch $Branch" } else { "$($rel.Version)" }); Ref = "$ref"; Channel = $(if ($useBranch) { 'Branch' } elseif ($rel.Prerelease) { 'Test' } else { 'Stable' })
-        Check = $verified; Date = (Get-Date).ToString('yyyy-MM-dd HH:mm'); Files = $ok
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $cfgDir 'installed.json') -Encoding UTF8
+        Check = $verified; Date = (Get-Date).ToString('yyyy-MM-dd HH:mm'); Files = $ok; FileList = $newFiles
+    } | ConvertTo-Json | Set-Content -LiteralPath $instFile -Encoding UTF8
 } catch { }
-Write-Host "`n=== Pull fertig === $ok Dateien ($verified)$(if ($repl) { " | $repl NICHT ersetzt" })" -ForegroundColor Cyan
+Write-Host "`n=== Pull fertig === $ok Dateien ($verified)$(if ($removedOld) { " | $removedOld alte entfernt" })" -ForegroundColor Cyan
 
-if ($repl) { Stop-HMPull 'Einzelne Dateien konnten nicht ersetzt werden (gesperrt?) - Tool wird NICHT automatisch gestartet. Pull erneut ausfuehren.' }
+
 # Tool nach dem Update gleich wieder starten (ausser -NoStart, z.B. CI)
 #   Pull laeuft schon als Admin -> direkt starten (erbt die Rechte, keine zweite UAC-Abfrage)
 #   sonst ueber Start.vbs (UAC-Abfrage, fensterlos)

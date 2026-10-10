@@ -1,5 +1,42 @@
 # Changelog
 
+## v3.3.0 (2026-10-10)
+
+Update-Weg auf den gemeinsamen Standard der HU-Tools gebracht (wie HU-MultiTenant und HUMig). Fuer die Next-Exam-Verteilung an
+den Schulen aendert sich nichts.
+
+### Sicherheit
+- **Programmordner wird abgesichert:** Tool und Auto-Pull laufen mit Administrator- bzw. SYSTEM-Rechten direkt aus dem
+  Programmordner. Liegt er z. B. unter `C:\Tools`, erben Standardbenutzer von `C:\` das Recht, dort Dateien anzulegen - etwa eine
+  `update.json`, die das naechste Update auf eine fremde Quelle umlenkt. Bei jedem Start (Oberflaeche und Auto-Pull) wird jetzt
+  geprueft, ob nur Administratoren und SYSTEM schreiben duerfen; wenn nicht, wird der Ordner abgesichert: Besitzer
+  Administratoren, Vererbung aus, SYSTEM und Administratoren Vollzugriff, Benutzer Lesen. Eigene Rechte anderer Konten und
+  Gruppen auf den Programmordner werden dabei entfernt. Verknuepfungen (Junction/Symlink) im Ordner werden entfernt (nur der
+  Link). Ausgenommen: Netzlaufwerke, Ordner in Benutzerprofilen, Laufwerkswurzeln. Gelingt das Absichern nicht, fragt die
+  Oberflaeche nach; der Auto-Pull bricht ab (Eintrag im Absturzprotokoll `%TEMP%\HU-NextExam-Manager-crash.log`).
+
+### Tool-Update
+- **Ruecksicherung beim Ersetzen:** Jede bisherige Datei wird zuerst zu `*.pullold`. Ist eine Datei gesperrt, wird alles
+  zurueckgestellt - nie mehr ein halb aktualisiertes Tool.
+- **Journal** `Config\pull-journal.json`: Bricht ein Update mittendrin ab (Absturz, Strom), stellt der naechste Pull-Lauf den
+  alten Stand wieder her. Solange das Journal existiert, startet das Tool nicht (es bietet an, `Pull.ps1` auszufuehren) und der
+  Auto-Pull setzt aus.
+- **Aufraeumen:** Dateien, die es in der neuen Version nicht mehr gibt, werden entfernt - nur solche, die frueher per Update
+  installiert wurden (`FileList` in `installed.json`). Eigene Dateien, `config.json`, `update.json`, `Config\` und `Logs\`
+  bleiben immer unberuehrt. Einmalig wird ein frueher mitinstallierter Ordner `.github` entfernt (nicht in Arbeitskopien mit `.git`).
+- **Release-Liste ohne Zwischenspeicher** (ein gerade signiertes Release erscheint sofort) und **Ausweichweg** beim Laden von
+  Pruefsumme/Signatur (bei HTTP 503 von github.com ueber die API) - Update-Bibliothek auf dem Stand von HUMig v2.0.99.
+- **Wichtig:** Ein Update laeuft immer mit dem bisher installierten `Pull.ps1`. Ruecksicherung, Journal und Aufraeumen wirken
+  deshalb erst beim **naechsten** Update nach 3.3.0. Die Absicherung des Programmordners wirkt sofort beim ersten Start von 3.3.0.
+
+### Geaendert
+- **Versionsnummer** steht jetzt nur noch in `Config\version.json` (vorher im Hauptskript).
+- **Einzelinstanz je Programmordner:** Zwei Installationen auf einem Server (z. B. zwei Schulen) koennen gleichzeitig laufen;
+  derselbe Ordner bleibt auf eine Instanz begrenzt. Der Auto-Pull laeuft je Programmordner hoechstens einmal gleichzeitig.
+- **Releases:** Ein Push auf main mit neuer Version legt das Vorab-Release (Kanal Test) automatisch an, Text aus diesem
+  CHANGELOG; die automatischen Tests haengen die Pruefsummen-Datei an und pruefen danach den Update-Weg einschliesslich
+  abgebrochenem Update und Aufraeumen. Es bleiben die letzten 10 Releases erhalten (das aktuelle stabile Release immer).
+
 ## v3.2.3 (2026-10-02)
 
 ### Behoben
