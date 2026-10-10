@@ -1363,7 +1363,7 @@ function Publish-NextExamToIntune {
             # Loeschen nur nach ausdruecklicher Bestaetigung (die App verliert dabei ihre Zuweisungen)
             $report.Action = 'Blocked'
             $report.AppId = $existingApp.id
-            $report.Message = "Vorhandene MSI-App '$($existingApp.displayName)' ($($existingApp.id)) muesste geloescht und als Win32-App neu angelegt werden - nicht bestaetigt, nichts geaendert."
+            $report.Message = "Vorhandene MSI-App '$($existingApp.displayName)' ($($existingApp.id)) muesste geloescht und als Win32-App neu angelegt werden - nicht bestaetigt, nichts geaendert. Zuerst 'Status pruefen', dann erneut deployen und die Rueckfrage bestaetigen."
             Write-Log $report.Message -Level WARN -Source 'MDM'
             return [PSCustomObject]$report
         } elseif ($existingApp.appType -eq '#microsoft.graph.windowsMobileMSI') {

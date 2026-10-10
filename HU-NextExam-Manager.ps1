@@ -1370,16 +1370,16 @@ function Refresh-GPOTaskStatusAsync {
             $sFW = '-'; $tFW = '-'
             if ($t.DomainFQDN) {
                 try {
-                    $s = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetStudent -TemplatePath (Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1')
+                    $s = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetStudent
                     if ($s.Exists) {
-                        $sStat = Format-NEMInstallGPOState $s
+                        $sStat = if ($s.ScriptOK -and $s.TaskXmlOK) { 'OK' } else { 'unvollstaendig' }
                         $sLink = if ($s.LinkedToThis) { 'verknuepft' } elseif ($s.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                     }
                 } catch { $sStat = 'FEHLER' }
                 try {
-                    $te = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetTeacher -TemplatePath (Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1')
+                    $te = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetTeacher
                     if ($te.Exists) {
-                        $tStat = Format-NEMInstallGPOState $te
+                        $tStat = if ($te.ScriptOK -and $te.TaskXmlOK) { 'OK' } else { 'unvollstaendig' }
                         $tLink = if ($te.LinkedToThis) { 'verknuepft' } elseif ($te.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                     }
                 } catch { $tStat = 'FEHLER' }
@@ -1977,7 +1977,8 @@ function Update-Dashboard {
         if ($script:CurrentRelease) {
             $rs = $script:CurrentRelease.Student.Version
             $rt = $script:CurrentRelease.Teacher.Version
-            if ($sMsi -like "$rs*" -and $tMsi -like "$rt*") { $msiStatus = 'aktuell' }
+            # exakter Vergleich (Praefix-Vergleich hielt z.B. 1.2.3.10 fuer gleich wie 1.2.3.1)
+            if ("$sMsi" -eq "$rs" -and "$tMsi" -eq "$rt") { $msiStatus = 'aktuell' }
             elseif ($sMsi -eq '-' -and $tMsi -eq '-')      { $msiStatus = 'nicht deployed' }
             else                                            { $msiStatus = 'veraltet' }
         }
@@ -2435,6 +2436,9 @@ Initialize-MDMTenantComboBox
 
 # --- Tenant-Wechsel: Token, Gruppen und letzter Versions-Check gehoeren zum alten Tenant -> verwerfen ---
 $script:cmbMDMTenant.Add_SelectionChanged({
+    # gleicher Tenant (z.B. Liste nach dem Speichern neu aufgebaut): Verbindung behalten
+    $nt = $script:cmbMDMTenant.SelectedItem
+    if ($nt -and $script:MDMToken -and $script:MDMToken.PSObject.Properties['TenantId'] -and "$($script:MDMToken.TenantId)" -eq "$($nt.TenantId)") { return }
     $script:MDMToken = $null
     $script:MDMGroups = @()
     $script:MDMLastCheck = @{}

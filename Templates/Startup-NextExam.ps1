@@ -85,7 +85,13 @@ function Write-StatusJson {
 # Version aus Text ("2.1.0.3", "v2.1.0") - $null wenn nicht lesbar
 function ConvertTo-NEVersion([string]$Text) {
     $v = "$Text".Trim() -replace '^[vV]', ''
-    if ($v -match '^(\d+(\.\d+){1,3})') { $o = $null; if ([version]::TryParse($Matches[1], [ref]$o)) { return $o } }
+    if ($v -match '^(\d+(\.\d+){1,3})') {
+        $o = $null
+        if ([version]::TryParse($Matches[1], [ref]$o)) {
+            # fehlende Teile mit 0 auffuellen: 1.1.3 == 1.1.3.0 (sonst gilt eine dreiteilige DisplayVersion immer als veraltet)
+            return (New-Object System.Version($o.Major, $o.Minor, [Math]::Max($o.Build, 0), [Math]::Max($o.Revision, 0)))
+        }
+    }
     return $null
 }
 

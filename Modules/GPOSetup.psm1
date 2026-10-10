@@ -410,6 +410,10 @@ function Remove-NEMScriptIniEntry([string]$Text, [string]$Match = 'Startup-NextE
             $i = [int]$Matches[1]
             if (-not $sections[$cur].ContainsKey($i)) { $sections[$cur][$i] = @{ CmdLine = ''; Parameters = '' } }
             $sections[$cur][$i][$Matches[2]] = $Matches[3]
+        } elseif ($cur -and "$ln".Trim()) {
+            # andere Schluessel (z.B. [ScriptsConfig] StartExecutePSFirst=true) unveraendert behalten
+            if (-not $sections[$cur].ContainsKey('__raw')) { $sections[$cur]['__raw'] = New-Object System.Collections.Generic.List[string] }
+            $sections[$cur]['__raw'].Add($ln.TrimEnd())
         }
     }
     foreach ($need in @('Startup')) { if (-not $sections.ContainsKey($need)) { $sections[$need] = @{}; $order.Insert(0, $need) } }
@@ -418,7 +422,8 @@ function Remove-NEMScriptIniEntry([string]$Text, [string]$Match = 'Startup-NextE
     foreach ($s in $order) {
         [void]$sb.Append("[$s]`r`n")
         $n = 0
-        foreach ($k in @($sections[$s].Keys | Sort-Object)) {
+        if ($sections[$s].ContainsKey('__raw')) { foreach ($r in $sections[$s]['__raw']) { [void]$sb.Append("$r`r`n") } }
+        foreach ($k in @($sections[$s].Keys | Where-Object { $_ -is [int] } | Sort-Object)) {
             $e = $sections[$s][$k]
             if ("$($e.CmdLine)" -match [regex]::Escape($Match)) { continue }
             [void]$sb.Append("$($n)CmdLine=$($e.CmdLine)`r`n$($n)Parameters=$($e.Parameters)`r`n")
@@ -438,13 +443,13 @@ function Merge-NEMScheduledTasksXml([string]$ExistingXml, [string]$NewXml, [stri
     if ($old.DocumentElement.LocalName -ne 'ScheduledTasks') { throw 'vorhandene ScheduledTasks.xml hat ein unbekanntes Format - wird nicht ueberschrieben' }
     foreach ($n in @($old.DocumentElement.ChildNodes | Where-Object { $_.NodeType -eq 'Element' -and $_.GetAttribute('name') -eq $TaskName })) { [void]$old.DocumentElement.RemoveChild($n) }
     foreach ($n in @($new.DocumentElement.ChildNodes | Where-Object { $_.NodeType -eq 'Element' })) { [void]$old.DocumentElement.AppendChild($old.ImportNode($n, $true)) }
-    $sw = New-Object System.IO.StringWriter
+    # ueber einen UTF-8-Stream schreiben -> Kopf sagt immer encoding="utf-8" (auch mit standalone="yes")
+    $ms = New-Object System.IO.MemoryStream
     $xs = New-Object System.Xml.XmlWriterSettings
     $xs.Indent = $true; $xs.IndentChars = "`t"; $xs.Encoding = New-Object System.Text.UTF8Encoding($false)
-    $xw = [System.Xml.XmlWriter]::Create($sw, $xs)
+    $xw = [System.Xml.XmlWriter]::Create($ms, $xs)
     $old.Save($xw); $xw.Close()
-    # StringWriter meldet utf-16 im Kopf - die Datei wird als UTF-8 geschrieben
-    return ($sw.ToString() -replace '^<\?xml version="1.0" encoding="utf-16"\?>', '<?xml version="1.0" encoding="utf-8"?>')
+    return [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
 }
 # Stammt eine vorhandene GPO vom HU-NextExam-Manager? (Kommentar oder eigene Dateien in SYSVOL)
 function Test-NEMOwnInstallGPO($GPO, [string]$SysvolPath, [string]$Role) {
@@ -497,6 +502,14 @@ function New-NextExamInstallGPO {
         try { & $Block } catch { throw "[Step: $Label] $($_.Exception.Message)" }
     }
 
+    # 1b. Vorhandene GPO gleichen Namens: nur verwenden, wenn sie vom HU-NextExam-Manager stammt (vor jeder Aenderung)
+    if (-not $created) {
+        $svCheck = Get-SysvolPath -GPO $gpo -DomainFQDN $DomainFQDN -Server $Server
+        if (-not (Test-NEMOwnInstallGPO -GPO $gpo -SysvolPath $svCheck -Role $Role)) {
+            throw "GPO '$GPOName' gibt es in $DomainFQDN schon, sie stammt aber nicht vom HU-NextExam-Manager (kein Kommentar 'HU-NextExam-Manager:', kein Startup-NextExam-Skript, keine eigene Aufgabe). Sie wird NICHT veraendert - bitte im Task einen anderen GPO-Praefix waehlen oder die GPO in der GPMC pruefen."
+        }
+    }
+
     # 2. SYSVOL-Struktur (Scripts + Preferences\ScheduledTasks)
     _step 'SYSVOL-Dirs' {
         $script:sysvol      = Get-SysvolPath -GPO $gpo -DomainFQDN $DomainFQDN -Server $Server
@@ -515,11 +528,6 @@ function New-NextExamInstallGPO {
     }
     $sysvol = $script:sysvol; $scriptsDir = $script:scriptsDir
     $startupDir = $script:startupDir; $prefTasksDir = $script:prefTasksDir
-
-    # 2b. Vorhandene GPO gleichen Namens: nur verwenden, wenn sie vom HU-NextExam-Manager stammt
-    if (-not $created -and -not (Test-NEMOwnInstallGPO -GPO $gpo -SysvolPath $sysvol -Role $Role)) {
-        throw "GPO '$GPOName' gibt es in $DomainFQDN schon, sie stammt aber nicht vom HU-NextExam-Manager (kein Kommentar 'HU-NextExam-Manager:', kein Startup-NextExam-Skript, keine eigene Aufgabe). Sie wird NICHT veraendert - bitte im Task einen anderen GPO-Praefix waehlen oder die GPO in der GPMC pruefen."
-    }
 
     # 3. Startup-Script als reines ASCII + CRLF (Task-Action-Ziel)
     $scriptName   = 'Startup-NextExam.ps1'
@@ -560,7 +568,12 @@ function New-NextExamInstallGPO {
         $newS = Remove-NEMScriptIniEntry -Text $oldS
         Write-SysvolFile -Path $sIniPath -Data ([System.Text.Encoding]::Default.GetBytes($newS.Text)) -Hidden
         $psIniPath = Join-Path $scriptsDir 'psscripts.ini'
-        $oldP = if (Test-Path -LiteralPath $psIniPath) { [System.IO.File]::ReadAllText($psIniPath, [System.Text.Encoding]::Unicode) } else { "[Startup]`r`n`r`n[Shutdown]`r`n" }
+        $oldP = "[Startup]`r`n`r`n[Shutdown]`r`n"
+        if (Test-Path -LiteralPath $psIniPath) {
+            $pb = [System.IO.File]::ReadAllBytes($psIniPath)
+            # psscripts.ini ist normalerweise UTF-16LE mit BOM; ohne BOM (von Hand bearbeitet) als ANSI lesen
+            $oldP = if ($pb.Length -ge 2 -and $pb[0] -eq 0xFF -and $pb[1] -eq 0xFE) { [System.Text.Encoding]::Unicode.GetString($pb, 2, $pb.Length - 2) } else { [System.Text.Encoding]::Default.GetString($pb) }
+        }
         $newP = Remove-NEMScriptIniEntry -Text ($oldP.TrimStart([char]0xFEFF))
         $bom = [byte[]]@(0xFF,0xFE)
         Write-SysvolFile -Path $psIniPath `

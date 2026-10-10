@@ -36,6 +36,8 @@ Describe 'GPO: vorhandene Inhalte bleiben erhalten (H3)' {
         $r.Text | Should -Match '(?m)^\[Shutdown\]'
         $r.Text | Should -Match '(?m)^0CmdLine=Aus\.cmd'
         (Remove-NEMScriptIniEntry -Text '').Text | Should -Match '^\[Startup\]'
+        $cfg = Remove-NEMScriptIniEntry -Text "[ScriptsConfig]`r`nStartExecutePSFirst=true`r`n[Startup]`r`n0CmdLine=Startup-NextExam.ps1`r`n0Parameters=`r`n"
+        $cfg.Text | Should -Match '(?m)^StartExecutePSFirst=true'
     }
     It 'ScheduledTasks.xml: nur die eigene Aufgabe wird ersetzt, fremde bleiben' {
         $old = '<?xml version="1.0" encoding="utf-8"?><ScheduledTasks clsid="{CC63F200-7309-4ba0-B154-A71CD118DBCC}"><TaskV2 name="Fremd" uid="1"/><TaskV2 name="HU-NextExam-Student-AutoInstall" uid="alt"/></ScheduledTasks>'
@@ -47,6 +49,8 @@ Describe 'GPO: vorhandene Inhalte bleiben erhalten (H3)' {
         ($x.ScheduledTasks.TaskV2 | Where-Object { $_.name -eq 'HU-NextExam-Student-AutoInstall' }).uid | Should -Be 'neu'
         $m | Should -Match '^<\?xml version="1.0" encoding="utf-8"\?>'
         { Merge-NEMScheduledTasksXml -ExistingXml '<kaputt' -NewXml $new -TaskName 'x' } | Should -Throw '*nicht lesbar*'
+        $sa = Merge-NEMScheduledTasksXml -ExistingXml ($old -replace 'encoding="utf-8"', 'encoding="utf-8" standalone="yes"') -NewXml $new -TaskName 'HU-NextExam-Student-AutoInstall'
+        $sa | Should -Match '^\uFEFF?<\?xml version="1.0" encoding="utf-8"'
     }
 }
 
@@ -73,6 +77,7 @@ Describe 'Startup-Skript: Versionsvergleich (M1)' {
         (ConvertTo-NEVersion '1.2.30.0') -gt (ConvertTo-NEVersion '1.2.3.0') | Should -BeTrue
         (ConvertTo-NEVersion '1.2.3.10') -gt (ConvertTo-NEVersion '1.2.3.9') | Should -BeTrue
         (ConvertTo-NEVersion 'v2.1.0.3') -eq (ConvertTo-NEVersion '2.1.0.3') | Should -BeTrue
+        (ConvertTo-NEVersion '1.1.3') -eq (ConvertTo-NEVersion '1.1.3.0') | Should -BeTrue   # dreiteilige DisplayVersion
         ConvertTo-NEVersion '' | Should -BeNullOrEmpty
         ConvertTo-NEVersion 'abc' | Should -BeNullOrEmpty
     }

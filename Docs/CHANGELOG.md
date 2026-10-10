@@ -32,6 +32,8 @@ Korrekturen aus der Code-Pruefung (alle HOCH-Befunde und mehrere MITTEL-Befunde)
   ersetzt (bisher gingen fremde Skripte, GPP-Aufgaben und Einstellungen anderer Erweiterungen verloren).
 - **Zwei Tasks derselben Domaene mit gleichem GPO-Praefix** werden erkannt: Warnung beim Speichern, GPO erstellen /
   entfernen / WMI-Filter cleanup werden fuer diese Tasks gesperrt (sie wuerden sich gegenseitig ueberschreiben bzw. loeschen).
+  Wer bisher absichtlich zwei solche Tasks hatte: einem Task einen neuen Praefix geben. Dabei entstehen neue GPOs; die alten
+  bleiben verknuepft, bis sie in der GPMC entfernt werden.
 - Die Rueckfrage beim Entfernen nennt alle vier GPOs (Install und Firewall); WMI-Filter cleanup fragt vorher nach.
 - Task-Ids sind jetzt immer eindeutig (bisher aus dem Namen abgeleitet: "BG Nord" und "BG-Nord" ergaben dieselbe Id).
 
