@@ -1299,6 +1299,15 @@ $script:txtGPODetail  = Get-UI 'txtGPODetail'
 
 # Status einer Install-GPO fuer die Anzeige: OK nur wenn Skript, geplante Aufgabe (Task-XML) und Startup-Abloesung passen
 # und das Skript in SYSVOL dem Stand des Tools entspricht (sonst "Skript veraltet" -> Install-GPOs erneut ausfuehren)
+# Status einer Firewall-GPO: Regeln UND Verknuepfung (eine nicht verknuepfte FW-GPO wirkt auf keinem PC)
+function Format-NEMFWGPOState($S) {
+    if (-not $S.Exists) { return 'fehlt' }
+    $rules = "$($S.RuleCount) Rules"
+    if ($S.LinkedToThis) { return "OK ($rules, verknuepft)" }
+    if (@($S.LinkedTo | Where-Object { $_ }).Count) { return "andere OU ($rules)" }
+    return "NICHT verknuepft ($rules)"
+}
+
 function Format-NEMInstallGPOState($S) {
     if (-not ($S.ScriptOK -and $S.TaskXmlOK -and $S.StartupRetired)) {
         $miss = @(); if (-not $S.ScriptOK) { $miss += 'Skript' }; if (-not $S.TaskXmlOK) { $miss += 'Aufgabe' }; if (-not $S.StartupRetired) { $miss += 'altes Startup' }
@@ -1471,13 +1480,13 @@ function Refresh-GPOTaskStatus {
         $sFW = '-'; $tFW = '-'
         if ($t.DomainFQDN) {
             try {
-                $s2 = Get-NextExamFWGPOStatus -GPOName $names.StudentFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                if ($s2.Exists) { $sFW = "OK ($($s2.RuleCount) Rules)" } else { $sFW = 'fehlt' }
+                $s2 = Get-NextExamFWGPOStatus -GPOName $names.StudentFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetStudent
+                $sFW = Format-NEMFWGPOState $s2
             } catch { $sFW = 'FEHLER' }
             try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
             try {
-                $t2 = Get-NextExamFWGPOStatus -GPOName $names.TeacherFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                if ($t2.Exists) { $tFW = "OK ($($t2.RuleCount) Rules)" } else { $tFW = 'fehlt' }
+                $t2 = Get-NextExamFWGPOStatus -GPOName $names.TeacherFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetTeacher
+                $tFW = Format-NEMFWGPOState $t2
             } catch { $tFW = 'FEHLER' }
             try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
         }
@@ -1999,9 +2008,10 @@ function Update-Dashboard {
                             else { 'teilweise' }
             } catch { $instStat = 'Fehler' }
             try {
-                $fS = Get-NextExamFWGPOStatus -GPOName $names.StudentFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                $fT = Get-NextExamFWGPOStatus -GPOName $names.TeacherFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                $fwStat = if ($fS.Exists -and $fT.Exists) { 'beide OK' }
+                $fS = Get-NextExamFWGPOStatus -GPOName $names.StudentFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetStudent
+                $fT = Get-NextExamFWGPOStatus -GPOName $names.TeacherFW -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetTeacher
+                $fwStat = if ($fS.Exists -and $fT.Exists -and -not ($fS.LinkedToThis -and $fT.LinkedToThis)) { 'pruefen: nicht verknuepft' }
+                          elseif ($fS.Exists -and $fT.Exists) { 'beide OK' }
                           elseif (-not $fS.Exists -and -not $fT.Exists) { 'fehlen' }
                           else { 'teilweise' }
             } catch { $fwStat = 'Fehler' }
@@ -2009,7 +2019,7 @@ function Update-Dashboard {
 
         # Gesamt-Ampel
         $overall = if ($msiStatus -eq 'aktuell' -and $instStat -eq 'beide OK' -and $fwStat -eq 'beide OK') { 'OK' }
-                   elseif ($msiStatus -eq 'veraltet' -or $instStat -eq 'fehlen' -or $instStat -like 'pruefen*' -or $fwStat -eq 'fehlen') { 'Handlungsbedarf' }
+                   elseif ($msiStatus -eq 'veraltet' -or $instStat -eq 'fehlen' -or $instStat -like 'pruefen*' -or $fwStat -eq 'fehlen' -or $fwStat -like 'pruefen*') { 'Handlungsbedarf' }
                    else { 'pruefen' }
 
         $rows += [PSCustomObject]@{
