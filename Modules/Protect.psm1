@@ -65,7 +65,7 @@ function Get-NEMAppDirIssues([string]$Root) {
         }
         return $isDir
     }
-    if (-not [System.IO.Directory]::Exists($Root)) { $issues.Add("Ordner fehlt: $Root"); return , $issues.ToArray() }
+    if (-not [System.IO.Directory]::Exists($Root)) { $issues.Add("Ordner fehlt: $Root"); return $issues.ToArray() }
     try {
         [void](& $check $Root $true)
         $stack = New-Object System.Collections.Generic.Stack[string]
@@ -80,7 +80,7 @@ function Get-NEMAppDirIssues([string]$Root) {
             }
         }
     } catch { $issues.Add("nicht pruefbar: $($_.Exception.Message)") }
-    return , $issues.ToArray()
+    return $issues.ToArray()
 }
 
 function ConvertTo-NEMAccountName([string]$Sid) {
