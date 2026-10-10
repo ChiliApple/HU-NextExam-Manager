@@ -152,7 +152,7 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td>Manuell</td><td>In einer Administrator-PowerShell: <code>powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\HU-NextExam-Manager.ps1</code></td></tr>
   </table>
   <div class="note"><b class="h">Welche Rechte wofür?</b>Die <b>Administratorrechte</b> (UAC) braucht das Tool für die Registrierung des AutoPull-Tasks als SYSTEM und zum Schreiben in einen Tool-Ordner außerhalb des Benutzerprofils. Die Rechte für <b>GPO-Operationen</b> kommen dagegen aus dem AD (Domänen-Admins bzw. Richtlinien-Ersteller-Besitzer) – Elevation allein hilft dort nicht.</div>
-  <div class="note tip"><b class="h">Konfiguration wandert mit</b><code>config.json</code> liegt neben dem Tool, nicht in <code>%APPDATA%</code>. Der ganze Ordner lässt sich auf einen anderen Server kopieren. MDM-Secrets liegen dagegen DPAPI-verschlüsselt pro Benutzer in <code>%APPDATA%\HU-NextExam\</code> – jeder Admin hinterlegt sie selbst.</div>
+  <div class="note tip"><b class="h">Konfiguration wandert mit</b><code>config.json</code> liegt im Tool-Ordner unter <code>Config\</code> (ab 3.4.0, vorher direkt im Tool-Ordner – wird beim Start automatisch verschoben), nicht in <code>%APPDATA%</code>. Der ganze Ordner lässt sich auf einen anderen Server kopieren. MDM-Secrets liegen dagegen DPAPI-verschlüsselt pro Benutzer in <code>%APPDATA%\HU-NextExam\</code> – jeder Admin hinterlegt sie selbst.</div>
 </section>
 
 <section id="settings">
@@ -202,7 +202,7 @@ cd $d; .\Pull.ps1</pre></li>
   <figure><a href="screenshots/dashboard.png" target="_blank"><img src="screenshots/dashboard.png" onerror="this.closest('figure').style.display='none'" alt="Dashboard mit Tool-Info, Release, MDM-Status, Clients und Tasks" loading="lazy"></a><figcaption>Dashboard: oben Tool und Release, in der Mitte MDM-Status und Clients, unten die Tasks mit Ampel</figcaption></figure>
   <table>
     <tr><th style="width:230px">Bereich</th><th>Inhalt</th></tr>
-    <tr><td><b>Tool</b></td><td>Tool-Version, Pfad der <code>config.json</code> und der Log-Datei. Dazu der Update-Kanal und die Prüfung der installierten Version, z. B. <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – gelesen aus <code>installed.json</code> im Tool-Ordner.</td></tr>
+    <tr><td><b>Tool</b></td><td>Tool-Version, Pfad der <code>config.json</code> und der Log-Datei. Dazu der Update-Kanal und die Prüfung der installierten Version, z. B. <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – gelesen aus <code>Config\installed.json</code>.</td></tr>
     <tr><td><b>Next-Exam Release (GitHub)</b></td><td>Tag und MSI-Dateinamen für Student und Teacher. <span class="ui">aktualisieren</span> fragt neu ab.</td></tr>
     <tr><td><b>MDM Status (Intune)</b></td><td>Erster konfigurierter Tenant mit Credentials: Intune-Version gegen GitHub-Version für Student und Teacher.</td></tr>
     <tr><td><b>Clients</b></td><td>Task wählen: Computer, Rolle, installierte Version, Zielversion, Status und letzter Check – aus dem Status-Share. <span class="ui">Aktualisieren</span> und <span class="ui r">Aufräumen</span> siehe <a href="#clients">Clients-Status</a>.</td></tr>
@@ -267,7 +267,7 @@ cd $d; .\Pull.ps1</pre></li>
   <p>Ist im Task ein Status-Share eingetragen, schreibt jeder Client nach jeder Prüfung eine Datei <code>&lt;COMPUTERNAME&gt;-&lt;Rolle&gt;.json</code> mit Computer, Rolle, installierter und Zielversion, Zeitpunkt und letzter Aktion (<i>aktuell</i>, <i>installed</i>, <i>error</i>).</p>
   <ol class="steps">
     <li><span class="ui">Settings</span> › Task › <b>Status-Share</b> eintragen (Vorschlag <code>…\_status</code> übernehmen oder anpassen).</li>
-    <li><span class="ui">Anlegen + ACL</span>: legt den Ordner an und setzt NTFS-Rechte – Domänencomputer <b>Schreiben</b>, Domänen-Admins <b>Vollzugriff</b>, Vererbung aus (nur dieser Ordner).</li>
+    <li><span class="ui">Anlegen + ACL</span>: legt den Ordner an und setzt NTFS-Rechte – Domänencomputer dürfen im Ordner nur <b>Dateien anlegen und lesen</b> und nur ihre <b>eigene</b> Datei ändern (Besitzerrechte), Domänen-Admins, lokale Administratoren und SYSTEM <b>Vollzugriff</b>, Vererbung aus. Ab 3.4.0 für bestehende Status-Shares einmal erneut ausführen (vorher durften PCs auch fremde Statusdateien überschreiben).</li>
     <li><span class="ui g">Install-GPOs</span> erneut ausführen – erst dann kennt der Client-Task den Status-Pfad.</li>
     <li>Nach dem nächsten Lauf am Client erscheint er im <span class="ui">Dashboard</span> unter <i>Clients</i>.</li>
   </ol>
@@ -329,7 +329,7 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td><b>Signatur</b></td><td><code>HU-NextExam-Manager-files.sha256.p7s</code> ist die PKCS#7-Signatur des Herausgebers über die Prüfsummen-Datei. Angeboten und installiert werden nur Releases mit gültiger Signatur des <b>eingebauten</b> Zertifikats (Fingerabdruck <code>1B669AE2…</code>).</td></tr>
     <tr><td><b>Alles oder nichts</b></td><td>Zuerst werden <b>alle</b> Dateien geladen und geprüft, erst dann ersetzt. Stimmt eine Prüfsumme nicht, bleibt alles unverändert.</td></tr>
     <tr><td><b>Rücksicherung</b> (ab 3.3.0)</td><td>Jede bisherige Datei wird vor dem Ersetzen zu <code>*.pullold</code>; ist eine Datei gesperrt, wird alles zurückgestellt. Bricht das Update mittendrin ab (Absturz, Strom), steht das in <code>Config\pull-journal.json</code>: Das Tool startet dann nicht, sondern bietet an, <code>Pull.ps1</code> auszuführen – das stellt den alten Stand her und aktualisiert neu. Der Auto-Pull setzt in diesem Fall aus.</td></tr>
-    <tr><td><b>Aufräumen</b> (ab 3.3.0)</td><td>Dateien, die es in der neuen Version nicht mehr gibt, werden entfernt – nur solche, die früher per Update installiert wurden (Liste in <code>installed.json</code>). Eigene Dateien, <code>config.json</code>, <code>update.json</code> und die Ordner <code>Config\</code> und <code>Logs\</code> bleiben immer unberührt.</td></tr>
+    <tr><td><b>Aufräumen</b> (ab 3.3.0)</td><td>Dateien, die es in der neuen Version nicht mehr gibt, werden entfernt – nur solche, die früher per Update installiert wurden (Liste in <code>installed.json</code>). Eigene Dateien und die Ordner <code>Config\</code> (mit <code>config.json</code>, <code>update.json</code>, <code>installed.json</code>) und <code>Logs\</code> bleiben immer unberührt. Ältere Installationen: die Dateien wandern beim Update aus dem Tool-Ordner nach <code>Config\</code>; beim Wechsel auf eine Version vor 3.4.0 werden sie zurückkopiert.</td></tr>
     <tr><td><b>Programmordner</b> (ab 3.3.0)</td><td>Tool und Auto-Pull laufen mit Administrator- bzw. SYSTEM-Rechten direkt aus dem Programmordner. Bei jedem Start wird geprüft, ob dort nur Administratoren und SYSTEM schreiben dürfen; wenn nicht, wird der Ordner abgesichert (Besitzer Administratoren, Benutzer nur Lesen). Ausgenommen sind Netzlaufwerke und Ordner in Benutzerprofilen. Gelingt das Absichern nicht, fragt das Tool nach; der Auto-Pull bricht ab.</td></tr>
     <tr><td><b>Ergebnis</b></td><td><span class="ui">Dashboard</span> › <i>Tool</i> zeigt Kanal und <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – aus <code>installed.json</code>.</td></tr>
   </table>
@@ -346,7 +346,7 @@ cd $d; .\Pull.ps1</pre></li>
   <table>
     <tr><th style="width:300px">Einstellung</th><th>Bedeutung</th></tr>
     <tr><td><b>Kanal</b></td><td>Stabil oder Test</td></tr>
-    <tr><td><span class="ui">Nur signierte Updates annehmen (empfohlen)</span></td><td>Standard: an. Abhaken nur nach einer Warnung; gespeichert als <code>AllowUnsigned</code> in <code>update.json</code> im Tool-Ordner.</td></tr>
+    <tr><td><span class="ui">Nur signierte Updates annehmen (empfohlen)</span></td><td>Standard: an. Abhaken nur nach einer Warnung; gespeichert als <code>AllowUnsigned</code> in <code>Config\update.json</code>.</td></tr>
     <tr><td><b>Fingerabdruck</b></td><td>Fingerabdruck des Signatur-Zertifikats. Für die offizielle Quelle ist er eingebaut – nichts einzustellen.</td></tr>
   </table>
   <h3 id="herausgeber">Ablauf für den Herausgeber</h3>
@@ -364,7 +364,7 @@ cd $d; .\Pull.ps1</pre></li>
   <ul>
     <li>Graph-API-Secrets und der Signier-Token werden DPAPI-verschlüsselt gespeichert. <code>config.json</code> mit echten Tokens nie in eine Versionsverwaltung legen.</li>
     <li>MSI-Shares: Schreiben nur für Admins, Lesen für die Clients.</li>
-    <li>Ein optionaler GitHub-Token in <code>config.json</code> (<code>ToolSettings.GitHubToken</code>, mehr API-Abrufe pro Stunde) sollte ein feingranularer Nur-Lese-Token nur für dieses Repository sein.</li>
+    <li>Ein optionaler GitHub-Token (mehr API-Abrufe pro Stunde) sollte ein feingranularer Nur-Lese-Token nur für dieses Repository sein. Eintragen in <code>Config\config.json</code> unter <code>ToolSettings.GitHubToken</code>; beim nächsten Start (als Administrator) übernimmt das Tool ihn verschlüsselt nach <code>Config\github-token.dat</code> (nur Administratoren/SYSTEM lesbar) und leert das Feld. Entfernen: <code>Config\github-token.dat</code> löschen.</li>
     <li>Sicherheitslücken bitte nicht als öffentliches Issue melden, sondern über <a href="https://github.com/ChiliApple/HU-NextExam-Manager/security/advisories/new" target="_blank">GitHub Security Advisories</a>.</li>
   </ul>
 </section>
@@ -398,7 +398,7 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td>„Tool-Update unvollständig“ beim Start</td><td>Das letzte Update wurde abgebrochen. <span class="ui">Ja</span> startet <code>Pull.ps1</code>, das den alten Stand wiederherstellt und neu aktualisiert.</td></tr>
     <tr><td>Next-Exam-Update am Prüfungstag verhindern</td><td>Im Install-Share eine Datei <code>update-freeze.txt</code> anlegen – solange sie existiert, installieren die Clients nichts. Läuft Next-Exam gerade, wird ohnehin nicht aktualisiert (ab 3.3.1).</td></tr>
     <tr><td>GPO-Status „Skript veraltet“</td><td>Das Startup-Skript in SYSVOL ist älter als das des Tools: Tasks markieren, <span class="ui g">Install-GPOs</span>.</td></tr>
-    <tr><td>MSI wird nicht verteilt: „Signatur ungültig“ / „signiert von …“</td><td>Nur gültig signierte MSIs des Herausgebers aus <code>ToolSettings.MsiTrustedPublisher</code> (Standard <i>Open Source Open Schools (OSOS) Austria</i>) werden verteilt. Hat der Hersteller das Zertifikat geändert, den Wert in <code>config.json</code> anpassen.</td></tr>
+    <tr><td>MSI wird nicht verteilt: „Signatur ungültig“ / „signiert von …“</td><td>Nur gültig signierte MSIs des Herausgebers aus <code>ToolSettings.MsiTrustedPublisher</code> (Standard <i>Open Source Open Schools (OSOS) Austria</i>) werden verteilt. Hat der Hersteller das Zertifikat geändert, den Wert in <code>Config\config.json</code> anpassen.</td></tr>
     <tr><td>„GPO-Präfix doppelt“</td><td>Zwei Tasks derselben Domäne nutzen denselben GPO-Präfix – jedem Task einen eigenen geben (Settings › Tasks).</td></tr>
     <tr><td>„Programmordner nicht geschützt“</td><td>Tool als Administrator starten (über die Verknüpfung bzw. <code>Start.vbs</code>). Hilft das nicht: Rechte des Ordners prüfen – nur Administratoren und SYSTEM sollen schreiben dürfen.</td></tr>
     <tr><td>Tool startet nicht aus der ISE</td><td>Das ist Absicht (WPF stürzt in der ISE ab) – über Verknüpfung, <code>Start.vbs</code> oder powershell.exe starten.</td></tr>

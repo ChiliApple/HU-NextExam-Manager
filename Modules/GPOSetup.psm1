@@ -157,6 +157,23 @@ function Get-SysvolPath {
 # Update-GPOMachineVersion - Korrektes Version-Inkrement
 #   v3.0: -CseList parametrisiert (Default = Scripts-Pair -> Rueckwaertskompatibel)
 # ============================================================
+# Naechste GPO-Version: Computer-Teil (untere 16 Bit) +1, Benutzer-Teil (obere 16 Bit) bleibt.
+# versionNumber ist im AD ein vorzeichenbehafteter 32-Bit-Wert (Benutzer-Teil ab 32768 -> negativ). Laeuft der
+# Computer-Teil ueber 65535, beginnt er wieder bei 1 (nie 0 = "keine Einstellungen") statt den Benutzer-Teil zu veraendern.
+function Get-NEMNextGPOVersion {
+    param([Parameter(Mandatory)][int64]$Current)
+    $u = $Current
+    if ($u -lt 0) { $u += 4294967296 }
+    $u = $u % 4294967296
+    $userVer = [int64][math]::Floor($u / 65536)
+    $compVer = $u % 65536
+    $compVer++
+    if ($compVer -gt 65535) { $compVer = 1 }
+    $unsigned = $userVer * 65536 + $compVer
+    $signed = if ($unsigned -ge 2147483648) { $unsigned - 4294967296 } else { $unsigned }
+    [pscustomobject]@{ User = $userVer; Computer = $compVer; Unsigned = $unsigned; Signed = [int]$signed }
+}
+
 function Update-GPOMachineVersion {
     [CmdletBinding()]
     param(
@@ -169,16 +186,16 @@ function Update-GPOMachineVersion {
         $CseList = "[{0}{1}]" -f $script:ScriptsCseGuid, $script:ScriptsToolGuid
     }
 
+    # Schreiben und Pruefen am selben DC (ohne -Server koennte die Pruefung einen noch nicht replizierten DC fragen).
+    # Ohne eingetragenen DC: PDC-Emulator - dort legen New-GPO und die GroupPolicy-Cmdlets standardmaessig an
+    if (-not $Server) { try { $Server = "$(@((Get-ADDomainController -DomainName $DomainFQDN -Discover -Service PrimaryDC -ErrorAction Stop).HostName)[0])" } catch { $Server = '' } }
     $dn = Get-GPODN -GPO $GPO -DomainFQDN $DomainFQDN
     $adParams = @{ Identity = $dn; Properties = @('versionNumber','gPCMachineExtensionNames') }
     if ($Server) { $adParams.Server = $Server }
     $adObj = Get-ADObject @adParams
 
-    $current = [int64]$adObj.versionNumber
-    $currentUserVer     = ($current -band 0xFFFF0000) -shr 16
-    $currentComputerVer = $current -band 0x0000FFFF
-    $newComputerVer = $currentComputerVer + 1
-    $newVer = ($currentUserVer -shl 16) -bor $newComputerVer
+    $v = Get-NEMNextGPOVersion -Current ([int64]$adObj.versionNumber)
+    $newVer = $v.Signed       # versionNumber im AD ist ein vorzeichenbehafteter 32-Bit-Wert
 
     $setParams = @{
         Identity = $dn
@@ -191,11 +208,11 @@ function Update-GPOMachineVersion {
     $gptIni = Join-Path $sysvol 'GPT.INI'
     if (Test-Path $gptIni) {
         $raw = [System.IO.File]::ReadAllText($gptIni, [System.Text.Encoding]::Default)
-        $raw = [regex]::Replace($raw, '(?im)^Version=\d+\r?$', "Version=$newVer")
+        $raw = [regex]::Replace($raw, '(?im)^Version=-?\d+\r?$', "Version=$newVer")
         if ($raw -match '(?im)^gPCMachineExtensionNames=') {
             $raw = [regex]::Replace($raw, '(?im)^gPCMachineExtensionNames=.*\r?$', "gPCMachineExtensionNames=$CseList")
         } else {
-            $raw = [regex]::Replace($raw, '(?im)(^Version=\d+)\r?\n', "`$1`r`ngPCMachineExtensionNames=$CseList`r`n")
+            $raw = [regex]::Replace($raw, '(?im)(^Version=-?\d+)\r?\n', "`$1`r`ngPCMachineExtensionNames=$CseList`r`n")
         }
         $raw = $raw -replace "`r`n", "`n"; $raw = $raw -replace "`n", "`r`n"
         if (-not $raw.EndsWith("`r`n")) { $raw += "`r`n" }
@@ -205,13 +222,13 @@ function Update-GPOMachineVersion {
         [System.IO.File]::WriteAllText($gptIni, $content, [System.Text.Encoding]::Default)
     }
 
-    if (Test-Path $gptIni) {
-        $verify = [System.IO.File]::ReadAllText($gptIni, [System.Text.Encoding]::Default)
-        if ($verify -notmatch "Version=$newVer") { Write-Warning "gpt.ini Verify FEHLGESCHLAGEN: Version=$newVer" }
-    } else { Write-Warning "gpt.ini existiert nicht nach Schreiben (DFS-Replication Delay?)" }
+    # Pruefen - stimmen AD und GPT.INI nicht, uebernehmen die Clients die Aenderung nicht: als Fehler melden
+    if (-not (Test-Path $gptIni)) { throw "GPT.INI fehlt nach dem Schreiben: $gptIni" }
+    $verify = [System.IO.File]::ReadAllText($gptIni, [System.Text.Encoding]::Default)
+    if ($verify -notmatch "(?im)^Version=$newVer\r?$") { throw "GPT.INI enthaelt nicht Version=$newVer ($gptIni)" }
     $verifyAD = Get-ADObject @adParams
-    if ([int64]$verifyAD.versionNumber -ne $newVer) {
-        Write-Warning "AD Verify FEHLGESCHLAGEN: versionNumber=$($verifyAD.versionNumber), erwartet=$newVer"
+    if ([int64]$verifyAD.versionNumber -ne [int64]$newVer) {
+        throw "GPO-Version im AD nicht gesetzt: versionNumber=$($verifyAD.versionNumber), erwartet=$newVer"
     }
     return $newVer
 }
@@ -976,7 +993,7 @@ if ($ExecutionContext.SessionState.Module) {
                                   New-NextExamInstallGPO, Get-NextExamInstallGPOStatus, `
                                   New-NextExamTaskXml, Invoke-NextExamGpoMigration, `
                                   Set-NextExamGPOLink, Remove-NextExamInstallGPO, `
-                                  Set-GPOMachineExtension, Update-GPOMachineVersion, `
+                                  Set-GPOMachineExtension, Update-GPOMachineVersion, Get-NEMNextGPOVersion, `
                                   Test-GPOHealth, Test-SysvolDFSConsistency, `
                                   Merge-NEMCseList, Remove-NEMScriptIniEntry, Merge-NEMScheduledTasksXml
 }

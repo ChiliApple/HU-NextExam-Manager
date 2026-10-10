@@ -48,7 +48,7 @@ Tool vorher schliessen (sonst icon.ico-File-Lock Warning).
 
 ## Config-Portabilität
 
-Die `config.json` liegt neben dem Tool (nicht in `%APPDATA%`).
+Die `config.json` liegt im Tool-Ordner unter `Config\` (ab v3.4.0; aeltere Installationen werden beim Start verschoben), nicht in `%APPDATA%`.
 Kompletter Ordner kopierbar auf anderen Server - Config geht mit.
 
 ## Erst-Setup

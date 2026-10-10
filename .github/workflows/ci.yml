@@ -127,10 +127,14 @@ jobs:
           $v = $env:TAG -replace '^v', ''
           # Die Signatur haengt der Herausgeber erst nach diesem Test an - hier wird der Weg mit Pruefsumme getestet
           New-Item -ItemType Directory -Path $t -Force | Out-Null
+          # update.json absichtlich noch am alten Ort (Tool-Ordner, vor v3.4.0) - Pull.ps1 muss sie nach Config\ verschieben und lesen
           '{ "AllowUnsigned": true }' | Set-Content -LiteralPath (Join-Path $t 'update.json') -Encoding UTF8
           powershell -NoProfile -ExecutionPolicy Bypass -File .\Pull.ps1 -Target $t -Version $v -NoStart -NonInteractive -Owner $env:GITHUB_REPOSITORY_OWNER -Repo ($env:GITHUB_REPOSITORY -split '/')[1]
           if ($LASTEXITCODE -ne 0) { throw "Pull.ps1 Exitcode $LASTEXITCODE" }
-          $i = Get-Content (Join-Path $t 'installed.json') -Raw | ConvertFrom-Json
+          if (Test-Path -LiteralPath (Join-Path $t 'update.json')) { throw 'update.json nicht nach Config\ verschoben' }
+          if (-not (Test-Path -LiteralPath (Join-Path $t 'Config\update.json'))) { throw 'Config\update.json fehlt' }
+          if (Test-Path -LiteralPath (Join-Path $t 'installed.json')) { throw 'installed.json im Tool-Ordner statt in Config\' }
+          $i = Get-Content (Join-Path $t 'Config\installed.json') -Raw | ConvertFrom-Json
           if ("$($i.Version)" -ne $v) { throw "installiert: $($i.Version), erwartet $v" }
           if ("$($i.Check)" -notlike 'Pruefsumme*') { throw "nicht geprueft: $($i.Check)" }
           if (-not (Test-Path (Join-Path $t 'Modules\Update.psm1'))) { throw 'Modules\Update.psm1 fehlt nach Pull' }
@@ -144,9 +148,11 @@ jobs:
           $own = Join-Path $t 'Modules\Eigene.psm1'; 'eigen' | Set-Content -LiteralPath $own -Encoding UTF8
           $outside = Join-Path $env:RUNNER_TEMP 'ausserhalb.txt'; 'aussen' | Set-Content -LiteralPath $outside -Encoding UTF8
           $gh = Join-Path $t '.github\workflows'; New-Item -ItemType Directory -Path $gh -Force | Out-Null; 'alt' | Set-Content -LiteralPath (Join-Path $gh 'ci.yml') -Encoding UTF8
-          $cfgFile = Join-Path $t 'config.json'; '{ "test": true }' | Set-Content -LiteralPath $cfgFile -Encoding UTF8
+          # config.json am alten Ort -> muss nach Config\ wandern (und bleiben)
+          $cfgOld = Join-Path $t 'config.json'; '{ "test": true }' | Set-Content -LiteralPath $cfgOld -Encoding UTF8
+          $cfgFile = Join-Path $t 'Config\config.json'
           $i.FileList = @($i.FileList) + @('Modules/Alt-Entfernt.psm1', 'Config/behalten.txt', '../ausserhalb.txt')
-          $i | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $t 'installed.json') -Encoding UTF8
+          $i | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $t 'Config\installed.json') -Encoding UTF8
           # abgebrochenes Update mit ZWEI Dateien vortaeuschen (ein Eintrag allein wuerde das Array-Verhalten von PS 5.1 verdecken)
           $main = Join-Path $t 'HU-NextExam-Manager.ps1'
           $mod = Join-Path $t 'Modules\Update.psm1'
@@ -166,10 +172,12 @@ jobs:
           if (-not (Test-Path -LiteralPath $keep)) { throw 'Datei in Config wurde entfernt' }
           if (-not (Test-Path -LiteralPath $own)) { throw 'eigene Datei wurde entfernt' }
           if (-not (Test-Path -LiteralPath $outside)) { throw 'Datei ausserhalb wurde entfernt' }
-          if (-not (Test-Path -LiteralPath $cfgFile)) { throw 'config.json wurde entfernt' }
+          if (-not (Test-Path -LiteralPath $cfgFile)) { throw 'config.json nicht in Config\ (entfernt oder nicht verschoben)' }
+          if ((Get-Content -LiteralPath $cfgFile -Raw) -notmatch '"test"') { throw 'Config\config.json hat falschen Inhalt' }
+          if (Test-Path -LiteralPath $cfgOld) { throw 'config.json liegt noch im Tool-Ordner' }
           if (Test-Path -LiteralPath (Join-Path $t '.github')) { throw 'alter .github-Ordner nicht entfernt' }
           $rest = @(Get-ChildItem -LiteralPath $t -Recurse -File -Force | Where-Object { $_.Name -match '\.(pullold|pulltmp)$' -or $_.Name -eq 'pull-journal.json' })
           if ($rest.Count) { throw "Reste: $(($rest | ForEach-Object Name) -join ', ')" }
-          $i = Get-Content (Join-Path $t 'installed.json') -Raw | ConvertFrom-Json
+          $i = Get-Content (Join-Path $t 'Config\installed.json') -Raw | ConvertFrom-Json
           if ("$($i.Version)" -ne $v -or -not @($i.FileList).Count) { throw "installed.json nach Update falsch: $($i.Version)" }
-          "Update OK: Journal zurueckgestellt, veraltete Datei entfernt, Config/eigene Dateien unberuehrt, .github entfernt, keine Reste"
+          "Update OK: Journal zurueckgestellt, veraltete Datei entfernt, Config/eigene Dateien unberuehrt, config.json nach Config\ verschoben, .github entfernt, keine Reste"

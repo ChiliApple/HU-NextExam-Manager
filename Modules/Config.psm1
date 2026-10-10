@@ -121,7 +121,15 @@ function Save-Config {
 
     Initialize-ConfigStore
     $json = $Config | ConvertTo-Json -Depth 8
-    [System.IO.File]::WriteAllText($script:ConfigFile, $json, [System.Text.UTF8Encoding]::new($false))
+    # atomar: erst vollstaendig in eine Zwischendatei, dann austauschen (vorheriger Stand bleibt als config.json.bak).
+    # Ein Abbruch (Absturz, Strom, volle Platte) hinterlaesst so nie eine halbe config.json.
+    $tmp = "$script:ConfigFile.tmp"
+    [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+    if ([System.IO.File]::Exists($script:ConfigFile)) {
+        [System.IO.File]::Replace($tmp, $script:ConfigFile, "$script:ConfigFile.bak")
+    } else {
+        [System.IO.File]::Move($tmp, $script:ConfigFile)
+    }
 }
 
 function Load-Config {
@@ -133,10 +141,19 @@ function Load-Config {
     # Neue Config existiert -> laden
     if (Test-Path $script:ConfigFile) {
         try {
-            $json = Get-Content -Path $script:ConfigFile -Raw -Encoding UTF8
+            $json = Get-Content -LiteralPath $script:ConfigFile -Raw -Encoding UTF8
             $cfg  = $json | ConvertFrom-Json
+            if (-not $cfg) { throw 'Datei ist leer' }
         } catch {
-            throw "Config laden fehlgeschlagen ($script:ConfigFile): $_"
+            # beschaedigt: letzten guten Stand (config.json.bak) nehmen - die defekte Datei wird erst beim naechsten Speichern ersetzt
+            $err = $_
+            $bak = "$script:ConfigFile.bak"
+            $cfg = $null
+            if (Test-Path -LiteralPath $bak) {
+                try { $cfg = Get-Content -LiteralPath $bak -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $cfg = $null }
+            }
+            if (-not $cfg) { throw "Config laden fehlgeschlagen ($script:ConfigFile): $err" }
+            Write-Warning "Config $script:ConfigFile nicht lesbar ($err) - letzter guter Stand aus config.json.bak geladen"
         }
     }
     # Legacy-Migration aus %APPDATA% DPAPI-Config
