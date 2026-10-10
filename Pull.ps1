@@ -514,6 +514,24 @@ if ($relVer -and $relVer -lt [version]'3.4.0') {
             try { Copy-Item -LiteralPath $dNew -Destination (Join-Path $Target $dn) -Force -ErrorAction Stop; Write-Host "  aeltere Version: $dn in den Tool-Ordner kopiert" -ForegroundColor DarkGray } catch { }
         }
     }
+    # GitHub-Token: aeltere Versionen kennen Config\github-token.dat nicht (und setzen beim Absichern dessen Rechte zurueck)
+    # -> wie frueher in config.json zurueckschreiben, Datei entfernen
+    if (Test-Path -LiteralPath $tokFile -PathType Leaf) {
+        try {
+            Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+            $oldTok = [System.Text.Encoding]::UTF8.GetString([System.Security.Cryptography.ProtectedData]::Unprotect([System.IO.File]::ReadAllBytes($tokFile), [System.Text.Encoding]::UTF8.GetBytes('HU-NextExam-Manager GitHubToken'), 'LocalMachine')).Trim()
+            $rootCfg = Join-Path $Target 'config.json'
+            if ($oldTok -and (Test-Path -LiteralPath $rootCfg -PathType Leaf)) {
+                $jc = [System.IO.File]::ReadAllText($rootCfg) | ConvertFrom-Json
+                if ($jc.ToolSettings) {
+                    $jc.ToolSettings | Add-Member -NotePropertyName 'GitHubToken' -NotePropertyValue $oldTok -Force
+                    [System.IO.File]::WriteAllText($rootCfg, ($jc | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
+                }
+            }
+            Remove-Item -LiteralPath $tokFile -Force -ErrorAction Stop
+            Write-Host '  aeltere Version: GitHub-Token wieder in config.json' -ForegroundColor DarkGray
+        } catch { Write-Host "  [WARN] GitHub-Token nicht zurueckschreibbar: $($_.Exception.Message) - Config\github-token.dat bitte loeschen" -ForegroundColor Yellow }
+    }
 }
 Write-Host "`n=== Pull fertig === $ok Dateien ($verified)$(if ($removedOld) { " | $removedOld alte entfernt" })" -ForegroundColor Cyan
 

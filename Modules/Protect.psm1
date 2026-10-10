@@ -249,6 +249,11 @@ function Get-NEMDataFile([string]$Root, [string]$Name) {
 function Move-NEMDataFiles([string]$Root) {
     $msgs = New-Object System.Collections.Generic.List[string]
     $dir = Join-Path $Root 'Config'
+    # Config\ als Verknuepfung: nichts dorthin verschieben (Ziel waere ein beliebiger Ordner)
+    if ((Test-Path -LiteralPath $dir) -and (([System.IO.File]::GetAttributes($dir) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        $msgs.Add("Config\ ist eine Verknuepfung - Datendateien nicht verschoben")
+        return $msgs.ToArray()
+    }
     foreach ($n in $script:NEMDataFiles) {
         $old = Join-Path $Root $n
         $new = Join-Path $dir $n
@@ -311,6 +316,23 @@ function Move-NEMGitHubTokenToStore([string]$Root, $Config) {
     $Config.ToolSettings.GitHubToken = ''
     return $true
 }
+# Nach der Uebernahme: Kopien der config.json mit Token leeren (config.json.bak/.tmp in Config\, config.json.alt im
+# Programmordner) - sie sind wie config.json fuer alle Benutzer lesbar
+function Clear-NEMTokenCopies([string]$Root) {
+    foreach ($f in @((Join-Path $Root 'Config\config.json.bak'), (Join-Path $Root 'Config\config.json.tmp'), (Join-Path $Root 'Config\config.json.alt'), (Join-Path $Root 'config.json.alt'), (Join-Path $Root 'config.json.bak'))) {
+        if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { continue }
+        try {
+            $j = [System.IO.File]::ReadAllText($f) | ConvertFrom-Json
+            if ($j.ToolSettings -and "$($j.ToolSettings.GitHubToken)".Trim()) {
+                $j.ToolSettings.GitHubToken = ''
+                [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
+            }
+        } catch {
+            # nicht lesbar: koennte den Token enthalten -> entfernen
+            if ([System.IO.File]::ReadAllText($f) -match 'GitHubToken"\s*:\s*"[^"]+') { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+        }
+    }
+}
 
 # Name der Einzelinstanz-Sperre je Programmordner (Global: gilt auch zwischen Sitzungen, z.B. Auto-Pull als SYSTEM)
 function Get-NEMMutexName([string]$Root, [string]$Kind = 'App') {
@@ -321,4 +343,4 @@ function Get-NEMMutexName([string]$Root, [string]$Kind = 'App') {
 }
 
 Export-ModuleMember -Function Test-NEMIsAdmin, Get-NEMAppDirSkipReason, Get-NEMAppDirIssues, Protect-NEMAppDir, Invoke-NEMAppDirProtection, Get-NEMToolVersion, Get-NEMMutexName, `
-    Test-NEMSecretFile, Set-NEMSecretFileAcl, Get-NEMDataFile, Move-NEMDataFiles, Get-NEMGitHubToken, Set-NEMGitHubToken, Move-NEMGitHubTokenToStore
+    Test-NEMSecretFile, Set-NEMSecretFileAcl, Get-NEMDataFile, Move-NEMDataFiles, Get-NEMGitHubToken, Set-NEMGitHubToken, Move-NEMGitHubTokenToStore, Clear-NEMTokenCopies

@@ -18,7 +18,8 @@ Restliche Befunde aus der Code-Pruefung (MITTEL/NIEDRIG) und Daten-Ordner `Confi
 ### Sicherheit
 - **GitHub-Token geschuetzt:** Ein Token in `config.json` (`ToolSettings.GitHubToken`, fuer alle Benutzer lesbar) wird
   beim Start nach `Config\github-token.dat` uebernommen - verschluesselt (DPAPI, Rechner) und nur fuer
-  Administratoren/SYSTEM lesbar; das Feld in `config.json` wird geleert. Neuer Token: wieder in `config.json` eintragen.
+  Administratoren/SYSTEM lesbar; das Feld in `config.json` (und in Kopien wie `config.json.bak`) wird geleert. Neuer Token:
+  wieder in `config.json` eintragen. Beim Wechsel auf eine Version vor 3.4.0 kommt er zurueck in `config.json`.
 - **Status-Share:** PCs (Domain Computers) erhalten nur noch *Dateien erstellen* + *Lesen* im Ordner; Aendern nur der eigenen
   Datei (Besitzer). Lokale Administratoren am Server: Vollzugriff.
 - **Intune-App-Setup:** Beim erneuten Einrichten wird das bisherige Secret des eigenen Benutzers und abgelaufene Secrets

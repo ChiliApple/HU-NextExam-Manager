@@ -186,8 +186,9 @@ function Update-GPOMachineVersion {
         $CseList = "[{0}{1}]" -f $script:ScriptsCseGuid, $script:ScriptsToolGuid
     }
 
-    # Schreiben und Pruefen am selben DC (ohne -Server koennte die Pruefung einen noch nicht replizierten DC fragen)
-    if (-not $Server) { try { $Server = "$(@((Get-ADDomainController -DomainName $DomainFQDN -Discover -ErrorAction Stop).HostName)[0])" } catch { $Server = '' } }
+    # Schreiben und Pruefen am selben DC (ohne -Server koennte die Pruefung einen noch nicht replizierten DC fragen).
+    # Ohne eingetragenen DC: PDC-Emulator - dort legen New-GPO und die GroupPolicy-Cmdlets standardmaessig an
+    if (-not $Server) { try { $Server = "$(@((Get-ADDomainController -DomainName $DomainFQDN -Discover -Service PrimaryDC -ErrorAction Stop).HostName)[0])" } catch { $Server = '' } }
     $dn = Get-GPODN -GPO $GPO -DomainFQDN $DomainFQDN
     $adParams = @{ Identity = $dn; Properties = @('versionNumber','gPCMachineExtensionNames') }
     if ($Server) { $adParams.Server = $Server }

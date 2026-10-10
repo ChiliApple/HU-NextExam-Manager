@@ -261,7 +261,21 @@ function Deploy-MSIToShare {
     $key = ([System.IO.Path]::GetFullPath($SharePath).TrimEnd('\') + '|' + $Role).ToLowerInvariant()
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $h = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($key))[0..7] | ForEach-Object { $_.ToString('x2') }) } finally { $sha.Dispose() }
-    $mtx = New-Object System.Threading.Mutex($false, "Global\HU-NextExam-Manager_Deploy_$h")
+    # Sperre auch fuer andere Konten oeffenbar (Auto-Pull als SYSTEM, Oberflaeche als Administrator)
+    $mName = "Global\HU-NextExam-Manager_Deploy_$h"
+    $mtx = $null
+    try {
+        $msec = New-Object System.Security.AccessControl.MutexSecurity
+        foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+            $msec.AddAccessRule((New-Object System.Security.AccessControl.MutexAccessRule((New-Object System.Security.Principal.SecurityIdentifier($sid)), [System.Security.AccessControl.MutexRights]::FullControl, 'Allow')))
+        }
+        $created = $false
+        $mtx = New-Object System.Threading.Mutex($false, $mName, ([ref]$created), $msec)
+    } catch {
+        $ie = $_.Exception; while ($ie.InnerException) { $ie = $ie.InnerException }
+        if ($ie -is [System.UnauthorizedAccessException]) { throw "Freigabe $SharePath ($Role) wird gerade von einem anderen Vorgang beschrieben - spaeter erneut versuchen" }
+        $mtx = New-Object System.Threading.Mutex($false, $mName)
+    }
     $own = $false
     try { $own = $mtx.WaitOne([TimeSpan]::FromMinutes(3)) } catch [System.Threading.AbandonedMutexException] { $own = $true }
     if (-not $own) { $mtx.Dispose(); throw "Freigabe $SharePath ($Role) wird gerade von einem anderen Vorgang beschrieben - spaeter erneut versuchen" }

@@ -81,6 +81,16 @@ Describe 'GitHub-Token geschuetzt (Config\github-token.dat)' {
         Test-Path -LiteralPath $f | Should -BeFalse
         Get-NEMGitHubToken $r | Should -Be ''
     }
+    It 'leert den Token in Kopien der config.json (.bak, .alt)' {
+        $r = Join-Path $TestDrive 'tok3'; New-Item -ItemType Directory -Path (Join-Path $r 'Config') -Force | Out-Null
+        $bak = Join-Path $r 'Config\config.json.bak'; $alt = Join-Path $r 'config.json.alt'
+        '{ "ToolSettings": { "GitHubToken": "github_pat_X", "LogLevel": "INFO" } }' | Set-Content -LiteralPath $bak -Encoding UTF8
+        '{ "ToolSettings": { "GitHubToken": "github_pat_Y" } }' | Set-Content -LiteralPath $alt -Encoding UTF8
+        Clear-NEMTokenCopies $r
+        (Get-Content -LiteralPath $bak -Raw) | Should -Not -Match 'github_pat'
+        (Get-Content -LiteralPath $bak -Raw | ConvertFrom-Json).ToolSettings.LogLevel | Should -Be 'INFO'
+        (Get-Content -LiteralPath $alt -Raw) | Should -Not -Match 'github_pat'
+    }
     It 'Absichern des Programmordners laesst das Geheimnis unlesbar fuer Benutzer' {
         if (-not $script:IsAdmin) { Set-ItResult -Skipped -Because 'braucht Administratorrechte'; return }
         $r = Join-Path $TestDrive 'tok2'; New-Item -ItemType Directory -Path (Join-Path $r 'Modules') -Force | Out-Null

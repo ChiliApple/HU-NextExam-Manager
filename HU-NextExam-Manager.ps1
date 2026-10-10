@@ -71,14 +71,14 @@ if ($AutoPull) {
     $apOwn = $false
     try { $apOwn = $apMutex.WaitOne(0, $false) } catch [System.Threading.AbandonedMutexException] { $apOwn = $true }
     if (-not $apOwn) { exit 0 }
-    # Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\
-    $apMoved = @(Move-NEMDataFiles $PSScriptRoot)
     # Programmordner absichern - laeuft der Auto-Pull mit Adminrechten (SYSTEM) und gelingt das nicht: abbrechen
     $prot = Invoke-NEMAppDirProtection -Root $PSScriptRoot
     if ($prot.Status -eq 'Failed') {
         try { Add-Content -Path $script:CrashLog -Value ("[{0}] AutoPull abgebrochen: {1}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $prot.Text) -Encoding UTF8 } catch { }
         exit 1
     }
+    # Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\ - erst NACH dem Absichern verschieben
+    $apMoved = @(Move-NEMDataFiles $PSScriptRoot)
     foreach ($m in 'Logging','Config','MSIPull','AutoPull') {
         Import-Module (Join-Path $ModulesPath "$m.psm1") -Force -Global -DisableNameChecking -ErrorAction Stop
     }
@@ -86,7 +86,7 @@ if ($AutoPull) {
         $apCfgPath = Get-NEMDataFile $RootPath 'config.json'
         # GitHub-Token aus config.json in die geschuetzte Datei uebernehmen (config.json ist fuer alle Benutzer lesbar)
         if (Test-Path -LiteralPath $apCfgPath) {
-            try { Set-ConfigPath -Path $apCfgPath; $apCfg = Load-Config; if (Move-NEMGitHubTokenToStore $RootPath $apCfg) { Save-Config -Config $apCfg } } catch { }
+            try { Set-ConfigPath -Path $apCfgPath; $apCfg = Load-Config; if (Move-NEMGitHubTokenToStore $RootPath $apCfg) { Save-Config -Config $apCfg; Clear-NEMTokenCopies $RootPath } } catch { }
         }
         $apErr = @(Invoke-AutoPullRun -ConfigPath $apCfgPath) | Where-Object { $_ -is [int] } | Select-Object -Last 1
         foreach ($mm in $apMoved) { Write-Log -Message $mm -Level INFO -Source 'AutoPull' }
@@ -125,9 +125,6 @@ try {
     }
 } catch {}
 
-# --- Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\ ---
-$script:DataFilesMoved = @(Move-NEMDataFiles $PSScriptRoot)
-
 # --- Programmordner absichern (nur Administratoren/SYSTEM duerfen schreiben) ---
 $script:AppDirProtection = Invoke-NEMAppDirProtection -Root $PSScriptRoot
 if ($script:AppDirProtection.Status -in @('Failed', 'Unsafe')) {
@@ -137,6 +134,9 @@ if ($script:AppDirProtection.Status -in @('Failed', 'Unsafe')) {
         'Programmordner nicht geschuetzt', 'YesNo', 'Warning')
     if ($protAns -ne 'Yes') { exit 1 }
 }
+
+# --- Daten (config.json, update.json, installed.json) liegen ab v3.4.0 in Config\ - erst NACH dem Absichern verschieben ---
+$script:DataFilesMoved = @(Move-NEMDataFiles $PSScriptRoot)
 
 # --- Konsolen-Fenster verstecken (WPF-Tool, Console nicht benoetigt) ---
 try {
@@ -196,7 +196,7 @@ Set-ConfigPath -Path (Get-NEMDataFile $script:RootPath 'config.json')
 $script:Config = Load-Config
 # GitHub-Token aus config.json (fuer alle Benutzer lesbar) in Config\github-token.dat (nur Administratoren/SYSTEM) uebernehmen
 $script:TokenMoved = $false
-try { if (Move-NEMGitHubTokenToStore $script:RootPath $script:Config) { Save-Config -Config $script:Config; $script:TokenMoved = $true } } catch { $script:TokenMoveError = "$($_.Exception.Message)" }
+try { if (Move-NEMGitHubTokenToStore $script:RootPath $script:Config) { Save-Config -Config $script:Config; Clear-NEMTokenCopies $script:RootPath; $script:TokenMoved = $true } } catch { $script:TokenMoveError = "$($_.Exception.Message)" }
 
 # --- Logging initialisieren ---
 Initialize-Log -Path $script:Config.ToolSettings.LogPath -Level $script:Config.ToolSettings.LogLevel
