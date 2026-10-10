@@ -20,10 +20,11 @@ on:
 permissions:
   contents: write
 
-# neuer Push bricht einen noch laufenden Lauf desselben Branches ab
+# neuer Push bricht einen noch laufenden Lauf desselben Pull-Requests ab - auf main nie (ein abgebrochener Lauf
+# koennte ein Release ohne Pruefsummen-Datei hinterlassen)
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -63,7 +64,12 @@ jobs:
           if [ -z "$V" ]; then echo "Version in Config/version.json nicht gefunden"; exit 1; fi
           T="v$V"
           if gh release view "$T" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $T gibt es schon - nichts anzulegen"; echo "tag=" >> "$GITHUB_OUTPUT"; exit 0
+            # Release gibt es schon - fehlt die Pruefsummen-Datei (z.B. abgebrochener Lauf), wird sie nachgereicht
+            if gh release view "$T" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -qx 'HU-NextExam-Manager-files.sha256'; then
+              echo "Release $T gibt es schon - nichts anzulegen"; echo "tag=" >> "$GITHUB_OUTPUT"; exit 0
+            fi
+            echo "Release $T ohne Pruefsummen-Datei - wird nachgereicht" >> "$GITHUB_STEP_SUMMARY"
+            echo "tag=$T" >> "$GITHUB_OUTPUT"; exit 0
           fi
           # Abschnitt "## v<Version>" aus Docs/CHANGELOG.md als Release-Text
           python3 - "$V" > notes.md <<'PY'
@@ -141,15 +147,21 @@ jobs:
           $cfgFile = Join-Path $t 'config.json'; '{ "test": true }' | Set-Content -LiteralPath $cfgFile -Encoding UTF8
           $i.FileList = @($i.FileList) + @('Modules/Alt-Entfernt.psm1', 'Config/behalten.txt', '../ausserhalb.txt')
           $i | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $t 'installed.json') -Encoding UTF8
+          # abgebrochenes Update mit ZWEI Dateien vortaeuschen (ein Eintrag allein wuerde das Array-Verhalten von PS 5.1 verdecken)
           $main = Join-Path $t 'HU-NextExam-Manager.ps1'
+          $mod = Join-Path $t 'Modules\Update.psm1'
           Move-Item -LiteralPath $main -Destination "$main.pullold"; 'kaputt' | Set-Content -LiteralPath $main -Encoding UTF8
-          ConvertTo-Json -InputObject @("$main") | Set-Content -LiteralPath (Join-Path $t 'Config\pull-journal.json') -Encoding UTF8
+          $modHash = (Get-FileHash -LiteralPath $mod -Algorithm SHA256).Hash
+          Move-Item -LiteralPath $mod -Destination "$mod.pullold"
+          ConvertTo-Json -InputObject @("$main", "$mod") | Set-Content -LiteralPath (Join-Path $t 'Config\pull-journal.json') -Encoding UTF8
           $out = powershell -NoProfile -ExecutionPolicy Bypass -File .\Pull.ps1 -Target $t -Version $v -NoStart -NonInteractive -Owner $env:GITHUB_REPOSITORY_OWNER -Repo ($env:GITHUB_REPOSITORY -split '/')[1] 2>&1 | Out-String
           $c = $LASTEXITCODE
           $out
           if ($c -ne 0) { throw "Pull.ps1 (Update) Exitcode $c" }
           if ($out -notmatch 'abgebrochen') { throw 'Journal wurde nicht ausgewertet' }
           if ((Get-Content -LiteralPath $main -Raw) -match 'kaputt') { throw 'HU-NextExam-Manager.ps1 nicht erneuert' }
+          if ($out -notmatch [regex]::Escape("zurueckgestellt: $mod")) { throw 'Journal: Modules\Update.psm1 nicht zurueckgestellt (Array-Auswertung?)' }
+          if (-not (Test-Path -LiteralPath $mod) -or (Get-FileHash -LiteralPath $mod -Algorithm SHA256).Hash -ne $modHash) { throw 'Modules\Update.psm1 fehlt oder falsch' }
           if (Test-Path -LiteralPath $old) { throw 'veraltete Datei nicht entfernt' }
           if (-not (Test-Path -LiteralPath $keep)) { throw 'Datei in Config wurde entfernt' }
           if (-not (Test-Path -LiteralPath $own)) { throw 'eigene Datei wurde entfernt' }

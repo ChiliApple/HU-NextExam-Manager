@@ -206,15 +206,23 @@ $jrDir = Join-Path $Target 'Config'
 $jr = Join-Path $jrDir 'pull-journal.json'
 if (Test-Path -LiteralPath $jr) {
     Write-Host '[WARN] Letztes Update wurde abgebrochen - stelle bisherige Dateien wieder her...' -ForegroundColor Yellow
-    try {
-        foreach ($jp in @(Get-Content -LiteralPath $jr -Raw -Encoding UTF8 | ConvertFrom-Json)) {
-            if (-not $jp) { continue }
-            $jo = "$jp.pullold"
-            if (Test-Path -LiteralPath $jo) { try { Move-Item -LiteralPath $jo -Destination "$jp" -Force } catch { Write-Host "  [WARN] $($jp): $($_.Exception.Message)" -ForegroundColor Yellow } }
-            Remove-Item -LiteralPath "$jp.pulltmp" -Force -ErrorAction SilentlyContinue
+    # Erst zuweisen, dann durchlaufen: PS 5.1 gibt ein JSON-Array aus ConvertFrom-Json als EIN Objekt aus
+    $jl = $null
+    try { $jl = Get-Content -LiteralPath $jr -Raw -Encoding UTF8 | ConvertFrom-Json }
+    catch { Stop-HMPull "Journal $jr nicht lesbar ($($_.Exception.Message)) - bitte *.pullold im Tool-Ordner pruefen." }
+    $jbad = 0
+    foreach ($jp in @($jl)) {
+        if (-not "$jp") { continue }
+        $jo = "$jp.pullold"
+        if (Test-Path -LiteralPath $jo) {
+            try { Move-Item -LiteralPath $jo -Destination "$jp" -Force -ErrorAction Stop; Write-Host "  zurueckgestellt: $jp" -ForegroundColor DarkGray }
+            catch { $jbad++; Write-Host "  [WARN] $($jp): $($_.Exception.Message)" -ForegroundColor Yellow }
         }
-        Remove-Item -LiteralPath $jr -Force -ErrorAction SilentlyContinue
-    } catch { Write-Host "  [WARN] Journal nicht lesbar: $($_.Exception.Message)" -ForegroundColor Yellow }
+        Remove-Item -LiteralPath "$jp.pulltmp" -Force -ErrorAction SilentlyContinue
+    }
+    # Journal nur loeschen, wenn alles zurueckgestellt ist - sonst bleibt die Start-Sperre bestehen
+    if ($jbad) { Stop-HMPull "$jbad Datei(en) konnten nicht zurueckgestellt werden (gesperrt?) - Tool schliessen und Pull erneut ausfuehren." }
+    Remove-Item -LiteralPath $jr -Force -ErrorAction SilentlyContinue
 }
 
 # --- Update-Einstellungen (update.json im Tool-Ordner)
@@ -388,17 +396,21 @@ catch {
 foreach ($s in $staged) {
     $old = "$($s[1]).pullold"
     $done = $false
+    $had = Test-Path -LiteralPath $s[1]      # einmal vor den Wiederholungen bestimmen
+    $backedUp = $false                       # bisherige Datei liegt gerade als *.pullold
     for ($try = 1; $try -le 5 -and -not $done; $try++) {
         try {
-            $had = Test-Path -LiteralPath $s[1]
-            if ($had) { Move-Item -LiteralPath $s[1] -Destination $old -Force }
+            if ($had -and -not $backedUp) { Move-Item -LiteralPath $s[1] -Destination $old -Force; $backedUp = $true }
             try { Move-Item -LiteralPath $s[0] -Destination $s[1] -Force }
-            catch { if ($had) { Move-Item -LiteralPath $old -Destination $s[1] -Force }; throw }
+            catch { if ($backedUp) { try { Move-Item -LiteralPath $old -Destination $s[1] -Force; $backedUp = $false } catch { } }; throw }
             $moved.Add(@($s[1], $(if ($had) { $old } else { '' })))
             $done = $true
         } catch { $lastErr = $_.Exception.Message; Start-Sleep -Seconds 1 }
     }
-    if (-not $done) { Write-Host "  $($s[1]): nicht ersetzbar ($lastErr)" -ForegroundColor Red; $repl++; break }
+    if (-not $done) {
+        if ($backedUp) { try { Move-Item -LiteralPath $old -Destination $s[1] -Force } catch { Write-Host "  [WARN] $($s[1]): Sicherung nicht zurueckgestellt ($($_.Exception.Message))" -ForegroundColor Yellow } }
+        Write-Host "  $($s[1]): nicht ersetzbar ($lastErr)" -ForegroundColor Red; $repl++; break
+    }
 }
 if ($repl) {
     # zurueckstellen (umgekehrte Reihenfolge): neue Dateien entfernen, Sicherungen zurueck

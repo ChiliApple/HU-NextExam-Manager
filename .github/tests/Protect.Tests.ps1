@@ -25,6 +25,7 @@ Describe 'Programmordner: wann wird abgesichert' {
     }
     It 'ein Ordner wie C:\Tools\HU-NextExam-Manager wird abgesichert' {
         Get-NEMAppDirSkipReason "$env:SystemDrive\Tools\HU-NextExam-Manager" | Should -BeNullOrEmpty
+        if ($env:PUBLIC) { Get-NEMAppDirSkipReason (Join-Path $env:PUBLIC 'Desktop\HU-NextExam-Manager') | Should -BeNullOrEmpty }
     }
 }
 
@@ -54,10 +55,15 @@ Describe 'Programmordner absichern (Protect-NEMAppDir)' {
         New-Item -ItemType Directory -Path (Join-Path $r 'Templates') -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $r 'Templates\Startup-NextExam.ps1') -Value 'x'
         New-Item -ItemType Junction -Path (Join-Path $r 'Link') -Target $outside | Out-Null
+        New-Item -ItemType HardLink -Path (Join-Path $r 'Hart.txt') -Target (Join-Path $outside 'wichtig.txt') | Out-Null
+        $aclVorher = (Get-Acl -LiteralPath (Join-Path $outside 'wichtig.txt')).Sddl
         $null = & icacls.exe (Join-Path $r 'Templates') /grant '*S-1-5-32-545:(OI)(CI)M'
+        (@(Get-NEMAppDirIssues $r) -join ';') | Should -Match 'HardLink'
         Protect-NEMAppDir -Root $r | Should -Match 'abgesichert'
         Test-Path -LiteralPath (Join-Path $r 'Link') | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $outside 'wichtig.txt') | Should -BeTrue
+        Test-Path -LiteralPath (Join-Path $r 'Hart.txt') | Should -BeFalse
+        (Get-Acl -LiteralPath (Join-Path $outside 'wichtig.txt')).Sddl | Should -Be $aclVorher   # Ziel des Hardlinks unveraendert
         Test-Path -LiteralPath (Join-Path $r 'Templates\Startup-NextExam.ps1') | Should -BeTrue
         $s = Get-NEMTestAcl (Join-Path $r 'Templates')
         $s.Protected | Should -BeFalse

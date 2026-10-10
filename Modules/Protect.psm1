@@ -32,7 +32,9 @@ function Get-NEMAppDirSkipReason([string]$Root) {
     if ($full.Length -le 3) { return 'Laufwerkswurzel' }
     try {
         $pd = [Environment]::ExpandEnvironmentVariables("$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' -ErrorAction Stop).ProfilesDirectory)").TrimEnd('\')
-        if ($pd -and ($full -like "$pd\*")) { return 'Benutzerprofil (andere Benutzer haben dort keinen Zugriff)' }
+        $pub = "$env:PUBLIC".TrimEnd('\'); if (-not $pub) { $pub = "$pd\Public" }
+        # Oeffentliches Profil (C:\Users\Public): dort duerfen alle Benutzer schreiben -> absichern
+        if ($pd -and ($full -like "$pd\*") -and -not ($full -eq $pub -or $full -like "$pub\*")) { return 'Benutzerprofil (andere Benutzer haben dort keinen Zugriff)' }
     } catch { }
     try {
         $drv = New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot($full))
@@ -51,9 +53,9 @@ function Get-NEMAppDirIssues([string]$Root) {
         param([string]$Path, [bool]$IsRoot)
         $a = [System.IO.File]::GetAttributes($Path)
         $isDir = (($a -band [System.IO.FileAttributes]::Directory) -ne 0)
-        if (($a -band $rp) -ne 0) {
+        if ((($a -band $rp) -ne 0) -or -not $isDir) {
             $lt = "$((Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue).LinkType)"
-            if ($lt -in @('Junction', 'SymbolicLink')) { $issues.Add("Verknuepfung: $Path"); return $false }
+            if ($lt -in @('Junction', 'SymbolicLink', 'HardLink')) { $issues.Add("Verknuepfung ($lt): $Path"); return $false }
         }
         $acl = if ($isDir) { [System.IO.Directory]::GetAccessControl($Path) } else { [System.IO.File]::GetAccessControl($Path) }
         $own = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
@@ -104,7 +106,34 @@ function Protect-NEMAppDir {
         $o = & icacls.exe "$Path" /setowner '*S-1-5-32-544' /C /Q 2>&1
         if ($LASTEXITCODE -ne 0) { $o2 = & takeown.exe /F "$Path" /A 2>&1; if ($LASTEXITCODE -ne 0) { throw "Besitz von $Path nicht uebernehmbar: $o $o2" } }
     }
-    # 1. Wurzel: Besitzer Administratoren, Vererbung aus, SYSTEM + Administratoren Vollzugriff, Benutzer Lesen
+    # Verknuepfung? Junction/SymbolicLink/HardLink -> nur den Link/Namen entfernen, nie das Ziel anfassen
+    $isLink = {
+        param([string]$Path, [System.IO.FileAttributes]$Attr)
+        $isDir = (($Attr -band [System.IO.FileAttributes]::Directory) -ne 0)
+        if ((($Attr -band $rp) -eq 0) -and $isDir) { return $false }
+        $lt = "$((Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue).LinkType)"
+        return ($lt -in @('Junction', 'SymbolicLink', 'HardLink'))
+    }
+    # 1. ZUERST alle Verknuepfungen entfernen - bevor irgendwo Rechte gesetzt werden (die Wurzel-ACL wird an
+    #    vorhandene Unterobjekte weitergegeben). Eigener Durchlauf statt icacls /T: folgt keinen Verknuepfungen.
+    $stack = New-Object System.Collections.Generic.Stack[string]
+    $stack.Push($Root)
+    while ($stack.Count) {
+        $d = $stack.Pop()
+        $entries = $null
+        try { $entries = [System.IO.Directory]::GetFileSystemEntries($d) }
+        catch { & $takeOver $d; $null = & icacls.exe "$d" /grant '*S-1-5-32-544:(F)' /C /Q 2>&1; $entries = [System.IO.Directory]::GetFileSystemEntries($d) }
+        foreach ($e in $entries) {
+            $a = [System.IO.File]::GetAttributes($e)
+            $isDir = (($a -band [System.IO.FileAttributes]::Directory) -ne 0)
+            if (& $isLink $e $a) {
+                if ($isDir) { [System.IO.Directory]::Delete($e, $false) } else { [System.IO.File]::Delete($e) }
+                continue
+            }
+            if ($isDir -and (($a -band $rp) -eq 0)) { $stack.Push($e) }
+        }
+    }
+    # 2. Wurzel: Besitzer Administratoren, Vererbung aus, SYSTEM + Administratoren Vollzugriff, Benutzer Lesen
     & $takeOver $Root
     $sec = New-Object System.Security.AccessControl.DirectorySecurity
     $sec.SetOwner($admSid)
@@ -113,8 +142,8 @@ function Protect-NEMAppDir {
         $sec.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule((New-Object System.Security.Principal.SecurityIdentifier($x[0])), [System.Security.AccessControl.FileSystemRights]$x[1], 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
     }
     [System.IO.Directory]::SetAccessControl($Root, $sec)
-    # 2. Inhalt: Verknuepfungen entfernen (nur den Link), alles andere: Besitzer Administratoren, nur geerbte Rechte.
-    #    Eigener Durchlauf statt icacls /T: folgt keinen Verknuepfungen. Zweimal, falls waehrenddessen etwas angelegt wurde.
+    # 3. Inhalt: Besitzer Administratoren, nur geerbte Rechte. Zweimal, falls waehrenddessen etwas angelegt wurde
+    #    (Verknuepfungen, die inzwischen entstanden sind, werden dabei ebenfalls entfernt).
     for ($pass = 1; $pass -le 2; $pass++) {
         $stack = New-Object System.Collections.Generic.Stack[string]
         $stack.Push($Root)
@@ -126,14 +155,11 @@ function Protect-NEMAppDir {
             foreach ($e in $entries) {
                 $a = [System.IO.File]::GetAttributes($e)
                 $isDir = (($a -band [System.IO.FileAttributes]::Directory) -ne 0)
-                if (($a -band $rp) -ne 0) {
-                    $lt = "$((Get-Item -LiteralPath $e -Force -ErrorAction SilentlyContinue).LinkType)"
-                    if ($lt -in @('Junction', 'SymbolicLink')) {
-                        if ($isDir) { [System.IO.Directory]::Delete($e, $false) } else { [System.IO.File]::Delete($e) }
-                        continue
-                    }
-                    if ($isDir) { continue }
+                if (& $isLink $e $a) {
+                    if ($isDir) { [System.IO.Directory]::Delete($e, $false) } else { [System.IO.File]::Delete($e) }
+                    continue
                 }
+                if ((($a -band $rp) -ne 0) -and $isDir) { continue }   # andere Reparse-Ordner nicht durchlaufen
                 if ($pass -eq 1) {
                     & $takeOver $e
                     $o = & icacls.exe "$e" /reset /C /Q 2>&1
