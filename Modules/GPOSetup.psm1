@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Management von Next-Exam Install-GPOs.
@@ -376,6 +376,85 @@ function New-NextExamTaskXml {
 "@
 }
 
+# ============================================================
+# Schutz vorhandener GPO-Inhalte (v3.3.1): nur EIGENE Eintraege anfassen
+# ============================================================
+# gPCMachineExtensionNames zusammenfuehren: "[{CSE}{Tool}...][...]" -> Vereinigung, GUID-sortiert (wie GPMC)
+function Merge-NEMCseList([string]$Existing, [string]$Add) {
+    $map = @{}
+    foreach ($src in @($Existing, $Add)) {
+        foreach ($g in [regex]::Matches("$src", '\[([^\]]*)\]')) {
+            $ids = @([regex]::Matches($g.Groups[1].Value, '\{[0-9A-Fa-f\-]{36}\}') | ForEach-Object { $_.Value.ToUpperInvariant() })
+            if (-not $ids.Count) { continue }
+            $cse = $ids[0]
+            if (-not $map.ContainsKey($cse)) { $map[$cse] = New-Object System.Collections.Generic.List[string] }
+            foreach ($x in @($ids | Select-Object -Skip 1)) { if (-not $map[$cse].Contains($x)) { $map[$cse].Add($x) } }
+        }
+    }
+    $out = ''
+    foreach ($cse in @($map.Keys | Sort-Object)) { $out += '[' + $cse + ((@($map[$cse]) | Sort-Object) -join '') + ']' }
+    return $out
+}
+# scripts.ini / psscripts.ini: nur Eintraege mit Startup-NextExam entfernen, andere Skripte behalten (neu nummeriert)
+function Remove-NEMScriptIniEntry([string]$Text, [string]$Match = 'Startup-NextExam') {
+    $order = New-Object System.Collections.Generic.List[string]
+    $sections = @{}
+    $cur = $null
+    foreach ($ln in ("$Text" -split "`r?`n")) {
+        if ($ln -match '^\s*\[(.+?)\]\s*$') {
+            $cur = $Matches[1]
+            if (-not $sections.ContainsKey($cur)) { $sections[$cur] = @{}; $order.Add($cur) }
+            continue
+        }
+        if ($cur -and $ln -match '^\s*(\d+)(CmdLine|Parameters)\s*=(.*)$') {
+            $i = [int]$Matches[1]
+            if (-not $sections[$cur].ContainsKey($i)) { $sections[$cur][$i] = @{ CmdLine = ''; Parameters = '' } }
+            $sections[$cur][$i][$Matches[2]] = $Matches[3]
+        }
+    }
+    foreach ($need in @('Startup')) { if (-not $sections.ContainsKey($need)) { $sections[$need] = @{}; $order.Insert(0, $need) } }
+    $sb = New-Object System.Text.StringBuilder
+    $kept = 0
+    foreach ($s in $order) {
+        [void]$sb.Append("[$s]`r`n")
+        $n = 0
+        foreach ($k in @($sections[$s].Keys | Sort-Object)) {
+            $e = $sections[$s][$k]
+            if ("$($e.CmdLine)" -match [regex]::Escape($Match)) { continue }
+            [void]$sb.Append("$($n)CmdLine=$($e.CmdLine)`r`n$($n)Parameters=$($e.Parameters)`r`n")
+            $n++; $kept++
+        }
+        [void]$sb.Append("`r`n")
+    }
+    return [pscustomobject]@{ Text = $sb.ToString().TrimEnd() + "`r`n"; Kept = $kept }
+}
+# ScheduledTasks.xml: nur die eigene Aufgabe (Name) ersetzen, andere GPP-Aufgaben der GPO behalten
+function Merge-NEMScheduledTasksXml([string]$ExistingXml, [string]$NewXml, [string]$TaskName) {
+    if (-not "$ExistingXml".Trim()) { return $NewXml }
+    $old = New-Object System.Xml.XmlDocument
+    try { $old.LoadXml($ExistingXml) } catch { throw "vorhandene ScheduledTasks.xml ist nicht lesbar ($($_.Exception.Message)) - wird nicht ueberschrieben, bitte in der GPMC pruefen" }
+    $new = New-Object System.Xml.XmlDocument
+    $new.LoadXml($NewXml)
+    if ($old.DocumentElement.LocalName -ne 'ScheduledTasks') { throw 'vorhandene ScheduledTasks.xml hat ein unbekanntes Format - wird nicht ueberschrieben' }
+    foreach ($n in @($old.DocumentElement.ChildNodes | Where-Object { $_.NodeType -eq 'Element' -and $_.GetAttribute('name') -eq $TaskName })) { [void]$old.DocumentElement.RemoveChild($n) }
+    foreach ($n in @($new.DocumentElement.ChildNodes | Where-Object { $_.NodeType -eq 'Element' })) { [void]$old.DocumentElement.AppendChild($old.ImportNode($n, $true)) }
+    $sw = New-Object System.IO.StringWriter
+    $xs = New-Object System.Xml.XmlWriterSettings
+    $xs.Indent = $true; $xs.IndentChars = "`t"; $xs.Encoding = New-Object System.Text.UTF8Encoding($false)
+    $xw = [System.Xml.XmlWriter]::Create($sw, $xs)
+    $old.Save($xw); $xw.Close()
+    # StringWriter meldet utf-16 im Kopf - die Datei wird als UTF-8 geschrieben
+    return ($sw.ToString() -replace '^<\?xml version="1.0" encoding="utf-16"\?>', '<?xml version="1.0" encoding="utf-8"?>')
+}
+# Stammt eine vorhandene GPO vom HU-NextExam-Manager? (Kommentar oder eigene Dateien in SYSVOL)
+function Test-NEMOwnInstallGPO($GPO, [string]$SysvolPath, [string]$Role) {
+    if ("$($GPO.Description)" -like 'HU-NextExam-Manager:*') { return $true }
+    if (Test-Path -LiteralPath (Join-Path $SysvolPath 'Machine\Scripts\Startup\Startup-NextExam.ps1')) { return $true }
+    $tx = Join-Path $SysvolPath 'Machine\Preferences\ScheduledTasks\ScheduledTasks.xml'
+    if ((Test-Path -LiteralPath $tx) -and ((Get-Content -LiteralPath $tx -Raw -ErrorAction SilentlyContinue) -match [regex]::Escape((Get-NextExamTaskName -Role $Role)))) { return $true }
+    return $false
+}
+
 function New-NextExamInstallGPO {
     <#
     .SYNOPSIS
@@ -383,8 +462,9 @@ function New-NextExamInstallGPO {
     .DESCRIPTION
         - Schreibt Startup-NextExam.ps1 nach Machine\Scripts\Startup (Task-Action-Ziel, ASCII+CRLF)
         - Schreibt Machine\Preferences\ScheduledTasks\ScheduledTasks.xml (SYSTEM-Task)
-        - MIGRATION: leert scripts.ini/psscripts.ini -> Scripts-CSE entfernt Altskript-Registrierung
-        - Setzt gPCMachineExtensionNames = Scripts-CSE + Prefs-ScheduledTasks-CSE, Version +1
+        - MIGRATION: entfernt den alten Startup-NextExam-Eintrag aus scripts.ini/psscripts.ini (andere Skripte bleiben)
+        - Ergaenzt gPCMachineExtensionNames um Scripts-CSE + Prefs-ScheduledTasks-CSE (vorhandene CSEs bleiben), Version +1
+        - Vorhandene GPO gleichen Namens wird nur verwendet, wenn sie vom HU-NextExam-Manager stammt
     #>
     [CmdletBinding()]
     param(
@@ -436,6 +516,11 @@ function New-NextExamInstallGPO {
     $sysvol = $script:sysvol; $scriptsDir = $script:scriptsDir
     $startupDir = $script:startupDir; $prefTasksDir = $script:prefTasksDir
 
+    # 2b. Vorhandene GPO gleichen Namens: nur verwenden, wenn sie vom HU-NextExam-Manager stammt
+    if (-not $created -and -not (Test-NEMOwnInstallGPO -GPO $gpo -SysvolPath $sysvol -Role $Role)) {
+        throw "GPO '$GPOName' gibt es in $DomainFQDN schon, sie stammt aber nicht vom HU-NextExam-Manager (kein Kommentar 'HU-NextExam-Manager:', kein Startup-NextExam-Skript, keine eigene Aufgabe). Sie wird NICHT veraendert - bitte im Task einen anderen GPO-Praefix waehlen oder die GPO in der GPMC pruefen."
+    }
+
     # 3. Startup-Script als reines ASCII + CRLF (Task-Action-Ziel)
     $scriptName   = 'Startup-NextExam.ps1'
     $targetScript = Join-Path $startupDir $scriptName
@@ -457,6 +542,10 @@ function New-NextExamInstallGPO {
     _step 'ScheduledTasks.xml' {
         $xml = New-NextExamTaskXml -Role $Role -Ps1UncPath $ps1Unc -SharePath $SharePath `
                     -StatusPath $StatusPath -DailyTime $DailyTime -BootDelay $BootDelay
+        # andere GPP-Aufgaben in derselben GPO behalten, nur die eigene ersetzen
+        if (Test-Path -LiteralPath $tasksXmlPath) {
+            $xml = Merge-NEMScheduledTasksXml -ExistingXml ([System.IO.File]::ReadAllText($tasksXmlPath)) -NewXml $xml -TaskName (Get-NextExamTaskName -Role $Role)
+        }
         $xml = $xml -replace "`r`n","`n"; $xml = $xml -replace "`n","`r`n"
         $utf8 = New-Object System.Text.UTF8Encoding($false)   # UTF-8 OHNE BOM
         Write-SysvolFile -Path $tasksXmlPath -Data ($utf8.GetBytes($xml))
@@ -465,20 +554,27 @@ function New-NextExamInstallGPO {
     # 5. MIGRATION: altes Startup-Script abraeumen -> leere scripts.ini + psscripts.ini
     #    (Scripts-CSE laeuft, findet 0 Scripts, entfernt die alte Registrierung am Client)
     _step 'Retire-Startup-Script' {
-        $emptyScripts = "[Startup]`r`n"
-        Write-SysvolFile -Path (Join-Path $scriptsDir 'scripts.ini') `
-            -Data ([System.Text.Encoding]::Default.GetBytes($emptyScripts)) -Hidden
-        $emptyPs = "[Startup]`r`n`r`n[Shutdown]`r`n"
+        # nur den eigenen alten Eintrag (Startup-NextExam) entfernen - andere Start-/Herunterfahr-Skripte bleiben
+        $sIniPath = Join-Path $scriptsDir 'scripts.ini'
+        $oldS = if (Test-Path -LiteralPath $sIniPath) { [System.IO.File]::ReadAllText($sIniPath, [System.Text.Encoding]::Default) } else { '' }
+        $newS = Remove-NEMScriptIniEntry -Text $oldS
+        Write-SysvolFile -Path $sIniPath -Data ([System.Text.Encoding]::Default.GetBytes($newS.Text)) -Hidden
+        $psIniPath = Join-Path $scriptsDir 'psscripts.ini'
+        $oldP = if (Test-Path -LiteralPath $psIniPath) { [System.IO.File]::ReadAllText($psIniPath, [System.Text.Encoding]::Unicode) } else { "[Startup]`r`n`r`n[Shutdown]`r`n" }
+        $newP = Remove-NEMScriptIniEntry -Text ($oldP.TrimStart([char]0xFEFF))
         $bom = [byte[]]@(0xFF,0xFE)
-        Write-SysvolFile -Path (Join-Path $scriptsDir 'psscripts.ini') `
-            -Data ($bom + [System.Text.Encoding]::Unicode.GetBytes($emptyPs)) -Hidden
+        Write-SysvolFile -Path $psIniPath `
+            -Data ($bom + [System.Text.Encoding]::Unicode.GetBytes($newP.Text)) -Hidden
         # alten CMD-Wrapper loeschen (nicht mehr benoetigt)
         $oldCmd = Join-Path $startupDir 'Startup-NextExam.cmd'
         if (Test-Path $oldCmd) { try { (Get-Item $oldCmd -Force).Attributes='Normal'; Remove-Item $oldCmd -Force } catch {} }
     }
 
-    # 6. CSE (Scripts + Prefs-Tasks) + Version +1
-    $cseList = Get-InstallCseList
+    # 6. CSE (Scripts + Prefs-Tasks) ERGAENZEN (vorhandene CSEs anderer Einstellungen bleiben) + Version +1
+    $dnCse = Get-GPODN -GPO $gpo -DomainFQDN $DomainFQDN
+    $adC = @{ Identity = $dnCse; Properties = 'gPCMachineExtensionNames' }; if ($Server) { $adC.Server = $Server }
+    $curCse = [string](Get-ADObject @adC).gPCMachineExtensionNames
+    $cseList = Merge-NEMCseList -Existing $curCse -Add (Get-InstallCseList)
     $ver = Update-GPOMachineVersion -GPO $gpo -DomainFQDN $DomainFQDN -Server $Server -CseList $cseList
 
     return [PSCustomObject]@{
@@ -507,7 +603,8 @@ function Get-NextExamInstallGPOStatus {
         [Parameter(Mandatory)][string]$GPOName,
         [Parameter(Mandatory)][string]$DomainFQDN,
         [string]$Server,
-        [string]$LinkOU
+        [string]$LinkOU,
+        [string]$TemplatePath   # optional: Templates\Startup-NextExam.ps1 -> ScriptCurrent (SYSVOL-Skript = Stand des Tools?)
     )
     Test-GPOModule
     $gpoParams = @{ Name = $GPOName; Domain = $DomainFQDN }
@@ -520,6 +617,7 @@ function Get-NextExamInstallGPOStatus {
         Id           = $null
         TaskXmlOK    = $false
         ScriptOK     = $false
+        ScriptCurrent = $null   # $true/$false (nur mit -TemplatePath), $null = nicht geprueft
         StartupRetired = $false
         # --- Rueckwaertskompatibel (v2.x GUI liest diese Felder) ---
         CmdWrapperOK = $false
@@ -540,6 +638,14 @@ function Get-NextExamInstallGPOStatus {
 
     $result.TaskXmlOK = (Test-Path $tasksXml) -and ((Get-Item $tasksXml).Length -gt 100)
     $result.ScriptOK  = (Test-Path $script)   -and ((Get-Item $script).Length -gt 100)
+    if ($result.ScriptOK -and $TemplatePath -and (Test-Path -LiteralPath $TemplatePath)) {
+        try {
+            # gleiche Umwandlung wie beim Schreiben (ASCII + CRLF)
+            $want = (Get-Content -LiteralPath $TemplatePath -Raw -Encoding UTF8) -replace "`r`n", "`n" -replace "`n", "`r`n" -replace ([char]0x00A0), ' '
+            $have = [System.IO.File]::ReadAllText($script, [System.Text.Encoding]::ASCII)
+            $result.ScriptCurrent = ($have -eq $want)
+        } catch { }
+    }
     # Kompat-Felder: in Task-Modus = Deployment-Health (Task-XML vorhanden) -> GUI bleibt gruen
     $result.CmdWrapperOK = $result.TaskXmlOK
     $result.ScriptsIniOK = $result.TaskXmlOK
@@ -547,7 +653,7 @@ function Get-NextExamInstallGPOStatus {
     if (Test-Path $sIni) {
         try {
             $ini = [System.IO.File]::ReadAllText($sIni, [System.Text.Encoding]::Default)
-            $result.StartupRetired = ($ini -notmatch '(?im)^\s*0CmdLine=')
+            $result.StartupRetired = ($ini -notmatch '(?im)^\s*\d+CmdLine=.*Startup-NextExam')
         } catch {}
     } else { $result.StartupRetired = $true }
 
@@ -850,5 +956,6 @@ if ($ExecutionContext.SessionState.Module) {
                                   New-NextExamTaskXml, Invoke-NextExamGpoMigration, `
                                   Set-NextExamGPOLink, Remove-NextExamInstallGPO, `
                                   Set-GPOMachineExtension, Update-GPOMachineVersion, `
-                                  Test-GPOHealth, Test-SysvolDFSConsistency
+                                  Test-GPOHealth, Test-SysvolDFSConsistency, `
+                                  Merge-NEMCseList, Remove-NEMScriptIniEntry, Merge-NEMScheduledTasksXml
 }

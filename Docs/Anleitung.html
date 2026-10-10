@@ -396,6 +396,10 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td>MDM: „App einrichten“ scheitert mit <code>consent_required</code></td><td>Zuerst <span class="ui">Admin-Anmeldung (diese Session)</span> mit Consent für die Organisation – siehe <a href="#appreg">App-Registrierung</a>.</td></tr>
     <tr><td>Pull.ps1: „Kein Schreibzugriff“</td><td>PowerShell als Administrator starten oder Ordnerrechte setzen.</td></tr>
     <tr><td>„Tool-Update unvollständig“ beim Start</td><td>Das letzte Update wurde abgebrochen. <span class="ui">Ja</span> startet <code>Pull.ps1</code>, das den alten Stand wiederherstellt und neu aktualisiert.</td></tr>
+    <tr><td>Next-Exam-Update am Prüfungstag verhindern</td><td>Im Install-Share eine Datei <code>update-freeze.txt</code> anlegen – solange sie existiert, installieren die Clients nichts. Läuft Next-Exam gerade, wird ohnehin nicht aktualisiert (ab 3.3.1).</td></tr>
+    <tr><td>GPO-Status „Skript veraltet“</td><td>Das Startup-Skript in SYSVOL ist älter als das des Tools: Tasks markieren, <span class="ui g">Install-GPOs</span>.</td></tr>
+    <tr><td>MSI wird nicht verteilt: „Signatur ungültig“ / „signiert von …“</td><td>Nur gültig signierte MSIs des Herausgebers aus <code>ToolSettings.MsiTrustedPublisher</code> (Standard <i>Open Source Open Schools (OSOS) Austria</i>) werden verteilt. Hat der Hersteller das Zertifikat geändert, den Wert in <code>config.json</code> anpassen.</td></tr>
+    <tr><td>„GPO-Präfix doppelt“</td><td>Zwei Tasks derselben Domäne nutzen denselben GPO-Präfix – jedem Task einen eigenen geben (Settings › Tasks).</td></tr>
     <tr><td>„Programmordner nicht geschützt“</td><td>Tool als Administrator starten (über die Verknüpfung bzw. <code>Start.vbs</code>). Hilft das nicht: Rechte des Ordners prüfen – nur Administratoren und SYSTEM sollen schreiben dürfen.</td></tr>
     <tr><td>Tool startet nicht aus der ISE</td><td>Das ist Absicht (WPF stürzt in der ISE ab) – über Verknüpfung, <code>Start.vbs</code> oder powershell.exe starten.</td></tr>
   </table>

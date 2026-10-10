@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Scheduled-Task Management fuer Auto-MSI-Pull.
@@ -152,6 +152,7 @@ function Invoke-AutoPullRun {
     if ($logPath -match '%[^%]+%') { $logPath = [Environment]::ExpandEnvironmentVariables($logPath) }
     Initialize-Log -Path $logPath -Level $cfg.ToolSettings.LogLevel
     Write-Log -Message '=== AutoPull gestartet ===' -Level INFO -Source 'AutoPull'
+    $script:AutoPullErrors = 0   # Anzahl Fehler -> Rueckgabe (Exitcode der geplanten Aufgabe)
 
     try {
         $rel = Get-NextExamLatestRelease
@@ -188,18 +189,20 @@ function Invoke-AutoPullRun {
                         Write-Log -Message "$($t.DisplayName) bereits aktuell - skip" -Level INFO -Source 'AutoPull'
                         continue
                     }
+                    $trustP = @{ TrustedPublisher = "$($cfg.ToolSettings.MsiTrustedPublisher)"; TrustedThumbprints = @($cfg.ToolSettings.MsiTrustedThumbprints) }
                     if (-not $sOk) {
                         $null = Deploy-MSIToShare -SourceMSI $tmpS -SharePath $t.StudentSharePath `
                                     -Role 'Student' -Version $rel.Student.Version `
-                                    -BuildDate $rel.Student.BuildDate -FileName $rel.Student.FileName
+                                    -BuildDate $rel.Student.BuildDate -FileName $rel.Student.FileName -ExpectedSha256 "$($rel.Student.Sha256)" @trustP
                     }
                     if (-not $tOk) {
                         $null = Deploy-MSIToShare -SourceMSI $tmpT -SharePath $t.TeacherSharePath `
                                     -Role 'Teacher' -Version $rel.Teacher.Version `
-                                    -BuildDate $rel.Teacher.BuildDate -FileName $rel.Teacher.FileName
+                                    -BuildDate $rel.Teacher.BuildDate -FileName $rel.Teacher.FileName -ExpectedSha256 "$($rel.Teacher.Sha256)" @trustP
                     }
                     Write-Log -Message "Deployed $($t.DisplayName): Student=$($rel.Student.Version) Teacher=$($rel.Teacher.Version)" -Level INFO -Source 'AutoPull'
                 } catch {
+                    $script:AutoPullErrors++
                     Write-Log -Message "Task $($t.DisplayName) fehlgeschlagen: $_" -Level ERROR -Source 'AutoPull'
                 }
             }
@@ -207,10 +210,12 @@ function Invoke-AutoPullRun {
             if (Test-Path $temp) { Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue }
         }
     } catch {
+        $script:AutoPullErrors++
         Write-Log -Message "AutoPull-Fehler: $_" -Level ERROR -Source 'AutoPull'
     } finally {
-        Write-Log -Message '=== AutoPull beendet ===' -Level INFO -Source 'AutoPull'
+        Write-Log -Message "=== AutoPull beendet ($($script:AutoPullErrors) Fehler) ===" -Level $(if ($script:AutoPullErrors) { 'WARN' } else { 'INFO' }) -Source 'AutoPull'
     }
+    return [int]$script:AutoPullErrors
 }
 
 if ($ExecutionContext.SessionState.Module) {

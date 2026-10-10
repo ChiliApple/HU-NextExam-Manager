@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     MSI-Pull-Modul: Next-Exam Release abfragen, MSI downloaden, auf Shares deployen.
@@ -70,6 +70,8 @@ function Get-NextExamLatestRelease {
                 FileName    = $a.name
                 Size        = $a.size
                 DownloadUrl = $a.browser_download_url
+                # SHA256 laut GitHub ("digest": "sha256:<hex>", bei neueren Releases vorhanden)
+                Sha256      = $(if ("$($a.digest)" -match '^sha256:([0-9a-fA-F]{64})$') { $Matches[1].ToLower() } else { '' })
             }
         }
     }
@@ -205,6 +207,38 @@ function Invoke-MSIDownload {
     }
 }
 
+# Next-Exam-MSI pruefen, bevor sie verteilt wird (laeuft auf allen Clients als SYSTEM):
+#   Authenticode-Signatur gueltig, Herausgeber (O= oder CN=) wie eingestellt, optional Fingerabdruck,
+#   optional SHA256 laut GitHub-Release. Wirft bei jeder Abweichung.
+function Test-NextExamMsiTrust {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [string]$TrustedPublisher = 'Open Source Open Schools (OSOS) Austria',
+        [string[]]$TrustedThumbprints = @(),
+        [string]$ExpectedSha256 = ''
+    )
+    if (-not (Test-Path -LiteralPath $Path)) { throw "MSI fehlt: $Path" }
+    if ($ExpectedSha256) {
+        $h = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLower()
+        if ($h -ne $ExpectedSha256.ToLower()) { throw "SHA256 der MSI stimmt nicht mit dem GitHub-Release ueberein ($h statt $ExpectedSha256) - nicht verteilt" }
+    }
+    $sig = $null
+    try { $sig = Get-AuthenticodeSignature -LiteralPath $Path -ErrorAction Stop } catch { throw "MSI-Signatur ungueltig (nicht pruefbar: $($_.Exception.Message)) - nicht verteilt: $([System.IO.Path]::GetFileName($Path))" }
+    if (-not $sig -or "$($sig.Status)" -ne 'Valid') { throw "MSI-Signatur ungueltig ($($sig.Status): $($sig.StatusMessage)) - nicht verteilt: $([System.IO.Path]::GetFileName($Path))" }
+    $cert = $sig.SignerCertificate
+    $pub = "$TrustedPublisher".Trim()
+    if (-not $pub) { throw 'Kein vertrauenswuerdiger Herausgeber eingestellt (ToolSettings.MsiTrustedPublisher) - nicht verteilt' }
+    $names = @()
+    foreach ($part in ("$($cert.Subject)" -split ',(?=\s*[A-Z]+=)')) {
+        if ($part.Trim() -match '^(O|CN)=(.+)$') { $names += $Matches[2].Trim().Trim('"') }
+    }
+    if ($names -notcontains $pub) { throw "MSI ist von '$($cert.Subject)' signiert, erwartet wird '$pub' (ToolSettings.MsiTrustedPublisher) - nicht verteilt" }
+    $tps = @($TrustedThumbprints | ForEach-Object { ("$_" -replace '[^0-9A-Fa-f]', '').ToUpper() } | Where-Object { $_ })
+    if ($tps.Count -and $tps -notcontains "$($cert.Thumbprint)".ToUpper()) { throw "MSI-Zertifikat $($cert.Thumbprint) ist nicht in ToolSettings.MsiTrustedThumbprints - nicht verteilt" }
+    return [pscustomobject]@{ Subject = "$($cert.Subject)"; Thumbprint = "$($cert.Thumbprint)"; NotAfter = $cert.NotAfter }
+}
+
 function Deploy-MSIToShare {
     [CmdletBinding()]
     param(
@@ -213,20 +247,35 @@ function Deploy-MSIToShare {
         [Parameter(Mandatory)][string]$Role,
         [Parameter(Mandatory)][string]$Version,
         [Parameter(Mandatory)][string]$BuildDate,
-        [Parameter(Mandatory)][string]$FileName
+        [Parameter(Mandatory)][string]$FileName,
+        [string]$TrustedPublisher = 'Open Source Open Schools (OSOS) Austria',
+        [string[]]$TrustedThumbprints = @(),
+        [string]$ExpectedSha256 = ''
     )
+    # 1. Herkunft pruefen - vor jeder Aenderung an der Freigabe
+    $trust = Test-NextExamMsiTrust -Path $SourceMSI -TrustedPublisher $TrustedPublisher -TrustedThumbprints $TrustedThumbprints -ExpectedSha256 $ExpectedSha256
     if (-not (Test-Path $SharePath)) {
         New-Item -ItemType Directory -Path $SharePath -Force | Out-Null
     }
-    # Archivierung vorhandener MSIs (gleiche Rolle)
-    $prefix = "Next-Exam-$Role"
-    $archived = Move-OldMSIToArchive -SharePath $SharePath -RolePrefix $prefix
-
-    # Copy neue MSI
     $dst = Join-Path $SharePath $FileName
-    Copy-Item -Path $SourceMSI -Destination $dst -Force
-
-    # version.json
+    $srcHash = (Get-FileHash -LiteralPath $SourceMSI -Algorithm SHA256).Hash
+    # gleiche Datei liegt schon unter dem Endnamen -> nicht neu kopieren (Clients koennten gerade davon installieren)
+    $same = (Test-Path -LiteralPath $dst) -and ((Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash -eq $srcHash)
+    $archived = 0
+    if (-not $same) {
+        # 2. unter Hilfsnamen kopieren und pruefen - die Clients sehen nie eine halbe Datei
+        $part = "$dst.part"
+        Copy-Item -LiteralPath $SourceMSI -Destination $part -Force
+        if ((Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash -ne $srcHash) {
+            Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+            throw "Kopie nach $SharePath fehlerhaft (Pruefsumme) - nichts veraendert"
+        }
+        # 3. erst jetzt alte MSIs dieser Rolle archivieren und die neue an ihren Platz
+        $prefix = "Next-Exam-$Role"
+        $archived = Move-OldMSIToArchive -SharePath $SharePath -RolePrefix $prefix
+        Move-Item -LiteralPath $part -Destination $dst -Force
+    }
+    # 4. version-*.json zuletzt - erst dann sehen die Clients die neue Version
     Write-ShareVersionInfo -SharePath $SharePath -Role $Role -Version $Version `
                            -BuildDate $BuildDate -FileName $FileName
 
@@ -235,6 +284,7 @@ function Deploy-MSIToShare {
         Deployed         = $dst
         ArchivedCount    = $archived
         Size             = (Get-Item $dst).Length
+        Signer           = $trust.Subject
     }
 }
 
@@ -242,5 +292,5 @@ function Deploy-MSIToShare {
 if ($ExecutionContext.SessionState.Module) {
 Export-ModuleMember -Function Get-NextExamLatestRelease, Read-ShareVersionInfo, `
                               Write-ShareVersionInfo, Move-OldMSIToArchive, `
-                              Invoke-MSIDownload, Deploy-MSIToShare
+                              Invoke-MSIDownload, Deploy-MSIToShare, Test-NextExamMsiTrust
 }
