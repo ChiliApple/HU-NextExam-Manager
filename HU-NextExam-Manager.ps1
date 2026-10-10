@@ -81,8 +81,10 @@ if ($AutoPull) {
         Import-Module (Join-Path $ModulesPath "$m.psm1") -Force -Global -DisableNameChecking -ErrorAction Stop
     }
     try {
-        Invoke-AutoPullRun -ConfigPath (Join-Path $RootPath 'config.json')
+        $apErr = @(Invoke-AutoPullRun -ConfigPath (Join-Path $RootPath 'config.json')) | Where-Object { $_ -is [int] } | Select-Object -Last 1
         if ($prot.Status -ne 'Ok') { Write-Log -Message $prot.Text -Level $(if ($prot.Status -eq 'Fixed') { 'INFO' } else { 'WARN' }) -Source 'AutoPull' }
+        # Fehler im Ergebnis der geplanten Aufgabe sichtbar machen (Dashboard: letzter Exitcode)
+        if ($apErr) { exit 1 }
         exit 0
     } catch {
         exit 1
@@ -476,6 +478,30 @@ function Load-TaskToForm($task) {
     $script:txtFWUDPPorts.Text      = [string]$task.FWUDPPorts
 }
 
+# Zwei Tasks derselben Domaene mit demselben GPO-Praefix teilen sich dieselben GPOs/WMI-Filter:
+# Anlegen ueberschreibt Freigabe/Status des anderen Tasks, Entfernen/Cleanup loescht dessen GPOs/Filter mit.
+function Get-NEMTaskCollision($Task) {
+    $pre = if ("$($Task.GPONamePrefix)".Trim()) { "$($Task.GPONamePrefix)".Trim() } else { 'HU-NEXT-EXAM-' }
+    $dom = "$($Task.DomainFQDN)".Trim()
+    if (-not $dom) { return @() }
+    return @($script:Config.Tasks | Where-Object {
+        $_ -and $_.Id -ne $Task.Id -and "$($_.DomainFQDN)".Trim() -ieq $dom -and
+        $(if ("$($_.GPONamePrefix)".Trim()) { "$($_.GPONamePrefix)".Trim() } else { 'HU-NEXT-EXAM-' }) -ieq $pre
+    })
+}
+# Vor GPO-Aktionen: bei Kollision abbrechen. Rueckgabe $true = weiter.
+function Test-NEMTaskCollisionOk([object[]]$Tasks, [string]$Action) {
+    $msg = @()
+    foreach ($t in @($Tasks)) {
+        $c = @(Get-NEMTaskCollision $t)
+        if ($c.Count) { $msg += "- $($t.DisplayName) und $(($c | ForEach-Object { $_.DisplayName }) -join ', ') ($($t.DomainFQDN), Praefix '$(if ($t.GPONamePrefix) { $t.GPONamePrefix } else { 'HU-NEXT-EXAM-' })')" }
+    }
+    if (-not $msg.Count) { return $true }
+    [System.Windows.MessageBox]::Show("$Action abgebrochen: Diese Tasks verwenden dieselbe Domaene und denselben GPO-Praefix und wuerden sich gegenseitig ueberschreiben bzw. loeschen:`n`n$($msg -join "`n")`n`nIn Settings > Tasks jedem Task einen eigenen GPO-Praefix geben.", 'GPO-Praefix doppelt', 'OK', 'Error') | Out-Null
+    Write-Log -Message "$Action abgebrochen - GPO-Praefix doppelt: $($msg -join ' | ')" -Level WARN -Source 'GPOSetup'
+    return $false
+}
+
 function Save-FormToTask {
     $sel = $script:lstTasks.SelectedItem
     if ($null -eq $sel) { return }
@@ -510,6 +536,10 @@ function Save-FormToTask {
         }
     }
     Set-Status "Task gespeichert: $($sel.DisplayName)"
+    $coll = @(Get-NEMTaskCollision $sel)
+    if ($coll.Count) {
+        [System.Windows.MessageBox]::Show("Achtung: '$($sel.DisplayName)' hat dieselbe Domaene und denselben GPO-Praefix wie: $(($coll | ForEach-Object { $_.DisplayName }) -join ', ').`n`nBeide wuerden dieselben GPOs und WMI-Filter verwenden. GPO-Aktionen sind fuer diese Tasks gesperrt, bis jeder einen eigenen GPO-Praefix hat.", 'GPO-Praefix doppelt', 'OK', 'Warning') | Out-Null
+    }
 }
 
 # --- Events ---
@@ -1098,12 +1128,13 @@ function Invoke-DeployLoop {
             Set-Status "Deploy -> $($s.DisplayName) ..."
             $script:Window.Dispatcher.Invoke([Action]{}, 'Background')
             try {
+                $trustP = @{ TrustedPublisher = "$($script:Config.ToolSettings.MsiTrustedPublisher)"; TrustedThumbprints = @($script:Config.ToolSettings.MsiTrustedThumbprints) }
                 $null = Deploy-MSIToShare -SourceMSI $state.TmpStudent -SharePath $s.StudentSharePath `
                             -Role 'Student' -Version $rel.Student.Version `
-                            -BuildDate $rel.Student.BuildDate -FileName $rel.Student.FileName
+                            -BuildDate $rel.Student.BuildDate -FileName $rel.Student.FileName -ExpectedSha256 "$($rel.Student.Sha256)" @trustP
                 $null = Deploy-MSIToShare -SourceMSI $state.TmpTeacher -SharePath $s.TeacherSharePath `
                             -Role 'Teacher' -Version $rel.Teacher.Version `
-                            -BuildDate $rel.Teacher.BuildDate -FileName $rel.Teacher.FileName
+                            -BuildDate $rel.Teacher.BuildDate -FileName $rel.Teacher.FileName -ExpectedSha256 "$($rel.Teacher.Sha256)" @trustP
                 Write-Log -Message "Deployed $($s.DisplayName): Student $($rel.Student.Version) / Teacher $($rel.Teacher.Version)" -Level INFO -Source 'MSIPull'
             } catch {
                 $errs += "$($s.DisplayName): $_"
@@ -1266,6 +1297,17 @@ $script:btnGPOLink    = Get-UI 'btnGPOLink'
 $script:btnGPORemove  = Get-UI 'btnGPORemove'
 $script:txtGPODetail  = Get-UI 'txtGPODetail'
 
+# Status einer Install-GPO fuer die Anzeige: OK nur wenn Skript, geplante Aufgabe (Task-XML) und Startup-Abloesung passen
+# und das Skript in SYSVOL dem Stand des Tools entspricht (sonst "Skript veraltet" -> Install-GPOs erneut ausfuehren)
+function Format-NEMInstallGPOState($S) {
+    if (-not ($S.ScriptOK -and $S.TaskXmlOK -and $S.StartupRetired)) {
+        $miss = @(); if (-not $S.ScriptOK) { $miss += 'Skript' }; if (-not $S.TaskXmlOK) { $miss += 'Aufgabe' }; if (-not $S.StartupRetired) { $miss += 'altes Startup' }
+        return "unvollstaendig ($($miss -join ', '))"
+    }
+    if ($S.ScriptCurrent -eq $false) { return 'Skript veraltet' }
+    return 'OK'
+}
+
 function Get-InstallGPONames {
     param($Task)
     $prefix = if ($Task.GPONamePrefix) { $Task.GPONamePrefix } else { 'HU-NEXT-EXAM-' }
@@ -1330,14 +1372,14 @@ function Refresh-GPOTaskStatusAsync {
                 try {
                     $s = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetStudent
                     if ($s.Exists) {
-                        $sStat = if ($s.ScriptOK) { 'OK' } else { 'unvollstaendig' }
+                        $sStat = if ($s.ScriptOK -and $s.TaskXmlOK) { 'OK' } else { 'unvollstaendig' }
                         $sLink = if ($s.LinkedToThis) { 'verknuepft' } elseif ($s.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                     }
                 } catch { $sStat = 'FEHLER' }
                 try {
                     $te = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN -Server $t.DCServer -LinkOU $t.OUTargetTeacher
                     if ($te.Exists) {
-                        $tStat = if ($te.ScriptOK) { 'OK' } else { 'unvollstaendig' }
+                        $tStat = if ($te.ScriptOK -and $te.TaskXmlOK) { 'OK' } else { 'unvollstaendig' }
                         $tLink = if ($te.LinkedToThis) { 'verknuepft' } elseif ($te.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                     }
                 } catch { $tStat = 'FEHLER' }
@@ -1407,18 +1449,18 @@ function Refresh-GPOTaskStatus {
         if ($t.DomainFQDN) {
             try {
                 $s = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN `
-                        -Server $t.DCServer -LinkOU $t.OUTargetStudent
+                        -Server $t.DCServer -LinkOU $t.OUTargetStudent -TemplatePath (Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1')
                 if ($s.Exists) {
-                    $sStat = if ($s.ScriptOK) { 'OK' } else { 'unvollstaendig' }
+                    $sStat = Format-NEMInstallGPOState $s
                     $sLink = if ($s.LinkedToThis) { 'verknuepft' } elseif ($s.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                 }
             } catch { $sStat = "FEHLER" }
             try { $script:Window.Dispatcher.Invoke([Action]{}, 'Render') | Out-Null } catch {}
             try {
                 $te = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN `
-                        -Server $t.DCServer -LinkOU $t.OUTargetTeacher
+                        -Server $t.DCServer -LinkOU $t.OUTargetTeacher -TemplatePath (Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1')
                 if ($te.Exists) {
-                    $tStat = if ($te.ScriptOK) { 'OK' } else { 'unvollstaendig' }
+                    $tStat = Format-NEMInstallGPOState $te
                     $tLink = if ($te.LinkedToThis) { 'verknuepft' } elseif ($te.LinkedTo.Count -gt 0) { 'andere OU' } else { 'nicht verknuepft' }
                 }
             } catch { $tStat = "FEHLER" }
@@ -1540,6 +1582,7 @@ function Invoke-ElevatedRestart {
 
 function Invoke-GPOCreateForTasks {
     param([object[]]$Tasks)
+    if (-not (Test-NEMTaskCollisionOk $Tasks 'GPO erstellen')) { return }
     $tmpl = Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1'
     if (-not (Test-Path $tmpl)) {
         [System.Windows.MessageBox]::Show("Startup-Template fehlt: $tmpl", 'Fehler', 'OK', 'Error') | Out-Null
@@ -1663,9 +1706,13 @@ function Invoke-GPOLinkForTasks {
 
 function Invoke-GPORemoveForTasks {
     param([object[]]$Tasks)
-    $names = @($Tasks | ForEach-Object { $_.DisplayName }) -join ', '
+    if (-not (Test-NEMTaskCollisionOk $Tasks 'GPOs entfernen')) { return }
+    $names = @($Tasks | ForEach-Object {
+        $ns = Get-InstallGPONames -Task $_
+        "$($_.DisplayName) ($($_.DomainFQDN)): $($ns.Student), $($ns.Teacher), $($ns.StudentFW), $($ns.TeacherFW)"
+    }) -join "`n"
     $res = [System.Windows.MessageBox]::Show(
-        "Alle Install-GPOs fuer $($Tasks.Count) Task(s) entfernen?`n`n$names`n`nDies loescht die GPOs komplett aus AD und SYSVOL.",
+        "Install- UND Firewall-GPOs fuer $($Tasks.Count) Task(s) entfernen?`n`n$names`n`nDies loescht die GPOs komplett aus AD und SYSVOL.",
         'Bestaetigen', 'YesNo', 'Warning')
     if ($res -ne 'Yes') { return }
     $errs = @(); $ok = 0
@@ -1860,6 +1907,9 @@ $script:btnGPOWMICleanup.Add_Click({
         [System.Windows.MessageBox]::Show('Keine Tasks markiert.', 'Hinweis', 'OK', 'Information') | Out-Null
         return
     }
+    if (-not (Test-NEMTaskCollisionOk @($rows | ForEach-Object { $_._Task }) 'WMI-Filter cleanup')) { return }
+    $pl = @($rows | ForEach-Object { $t = $_._Task; "$($t.DomainFQDN): $(if ($t.GPONamePrefix) { $t.GPONamePrefix + 'WMI' } else { 'HU-NEXT-EXAM-WMI' })*" }) -join "`n"
+    if ([System.Windows.MessageBox]::Show("Alle WMI-Filter mit diesem Praefix loeschen?`n`n$pl", 'WMI-Filter cleanup', 'YesNo', 'Warning') -ne 'Yes') { return }
     foreach ($r in $rows) {
         $t = $r._Task
         $prefix = if ($t.GPONamePrefix) { $t.GPONamePrefix + 'WMI' } else { 'HU-NEXT-EXAM-WMI' }
@@ -1927,7 +1977,8 @@ function Update-Dashboard {
         if ($script:CurrentRelease) {
             $rs = $script:CurrentRelease.Student.Version
             $rt = $script:CurrentRelease.Teacher.Version
-            if ($sMsi -like "$rs*" -and $tMsi -like "$rt*") { $msiStatus = 'aktuell' }
+            # exakter Vergleich (Praefix-Vergleich hielt z.B. 1.2.3.10 fuer gleich wie 1.2.3.1)
+            if ("$sMsi" -eq "$rs" -and "$tMsi" -eq "$rt") { $msiStatus = 'aktuell' }
             elseif ($sMsi -eq '-' -and $tMsi -eq '-')      { $msiStatus = 'nicht deployed' }
             else                                            { $msiStatus = 'veraltet' }
         }
@@ -1937,9 +1988,13 @@ function Update-Dashboard {
         if ($t.DomainFQDN) {
             $names = Get-InstallGPONames -Task $t
             try {
-                $sS = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                $sT = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN -Server $t.DCServer
-                $instStat = if ($sS.Exists -and $sT.Exists) { 'beide OK' }
+                $tmplPath = Join-Path $script:RootPath 'Templates\Startup-NextExam.ps1'
+                $sS = Get-NextExamInstallGPOStatus -GPOName $names.Student -DomainFQDN $t.DomainFQDN -Server $t.DCServer -TemplatePath $tmplPath
+                $sT = Get-NextExamInstallGPOStatus -GPOName $names.Teacher -DomainFQDN $t.DomainFQDN -Server $t.DCServer -TemplatePath $tmplPath
+                $instStat = if ($sS.Exists -and $sT.Exists) {
+                                $st = @((Format-NEMInstallGPOState $sS), (Format-NEMInstallGPOState $sT))
+                                if (@($st | Where-Object { $_ -ne 'OK' }).Count) { 'pruefen: ' + (($st | Select-Object -Unique) -join ' / ') } else { 'beide OK' }
+                            }
                             elseif (-not $sS.Exists -and -not $sT.Exists) { 'fehlen' }
                             else { 'teilweise' }
             } catch { $instStat = 'Fehler' }
@@ -1954,7 +2009,7 @@ function Update-Dashboard {
 
         # Gesamt-Ampel
         $overall = if ($msiStatus -eq 'aktuell' -and $instStat -eq 'beide OK' -and $fwStat -eq 'beide OK') { 'OK' }
-                   elseif ($msiStatus -eq 'veraltet' -or $instStat -eq 'fehlen' -or $fwStat -eq 'fehlen') { 'Handlungsbedarf' }
+                   elseif ($msiStatus -eq 'veraltet' -or $instStat -eq 'fehlen' -or $instStat -like 'pruefen*' -or $fwStat -eq 'fehlen') { 'Handlungsbedarf' }
                    else { 'pruefen' }
 
         $rows += [PSCustomObject]@{
@@ -2221,6 +2276,9 @@ function Get-MDMAuthMode {
 
 function Test-MDMTokenValid {
     if (-not $script:MDMToken) { return $false }
+    # Token gilt nur fuer den Tenant, fuer den es geholt wurde (nach einem Tenant-Wechsel nie im alten Tenant arbeiten)
+    $sel = $script:cmbMDMTenant.SelectedItem
+    if (-not $sel -or -not $script:MDMToken.PSObject.Properties['TenantId'] -or "$($script:MDMToken.TenantId)" -ne "$($sel.TenantId)") { return $false }
     $elapsed = ((Get-Date) - $script:MDMToken.ObtainedAt).TotalSeconds
     # Token als ungueltig behandeln wenn 80% der Laufzeit abgelaufen
     return ($elapsed -lt ($script:MDMToken.ExpiresIn * 0.8))
@@ -2375,6 +2433,18 @@ function Build-AppMetadata {
 
 # --- Tenant-ComboBox initialisieren ---
 Initialize-MDMTenantComboBox
+
+# --- Tenant-Wechsel: Token, Gruppen und letzter Versions-Check gehoeren zum alten Tenant -> verwerfen ---
+$script:cmbMDMTenant.Add_SelectionChanged({
+    # gleicher Tenant (z.B. Liste nach dem Speichern neu aufgebaut): Verbindung behalten
+    $nt = $script:cmbMDMTenant.SelectedItem
+    if ($nt -and $script:MDMToken -and $script:MDMToken.PSObject.Properties['TenantId'] -and "$($script:MDMToken.TenantId)" -eq "$($nt.TenantId)") { return }
+    $script:MDMToken = $null
+    $script:MDMGroups = @()
+    $script:MDMLastCheck = @{}
+    try { $script:lstMDMGroups.ItemsSource = $null } catch { }
+    try { Update-MDMAuthStatusUI 'Nicht verbunden' '#9A9A9A' } catch { }
+})
 
 
 
@@ -2798,6 +2868,15 @@ function Invoke-MDMDeploy {
     }
     $availableAll = ($script:chkMDMAvailableAll.IsChecked -eq $true)
     $forceDeploy  = ($script:chkMDMForceDeploy.IsChecked -eq $true)
+    # Alte MSI-App (windowsMobileMSI) muesste geloescht werden -> nur nach ausdruecklicher Rueckfrage mit Name und Id
+    $allowMsiMigration = $false
+    $msiApps = @(foreach ($r in @('Student', 'Teacher')) { $a = $script:MDMLastCheck["${r}App"]; if ($a -and "$($a.appType)" -eq '#microsoft.graph.windowsMobileMSI') { $a } })
+    if ($msiApps.Count) {
+        $q = [System.Windows.MessageBox]::Show(
+            "Im Tenant '$($tenant.TenantName)' gibt es alte MSI-Apps, die als Win32-App neu angelegt werden muessen:`n`n$(($msiApps | ForEach-Object { "$($_.displayName)  (Id $($_.id))" }) -join "`n")`n`nDabei wird die alte App GELOESCHT - ihre Zuweisungen gehen verloren.`n`nLoeschen und neu anlegen?",
+            'Intune-App ersetzen', 'YesNo', 'Warning')
+        $allowMsiMigration = ($q -eq 'Yes')
+    }
     $accessToken  = $script:MDMToken.AccessToken
     $roles = switch ($Scope) {
         'Student' { @('Student') }
@@ -2882,7 +2961,7 @@ function Invoke-MDMDeploy {
 
     $ps = [powershell]::Create()
     $ps.AddScript({
-        param($msiPaths, $accessToken, $selectedGroupIds, $availableAll, $forceDeploy, $metadataMap, $modulesPath, $deployTempBase)
+        param($msiPaths, $accessToken, $selectedGroupIds, $availableAll, $forceDeploy, $metadataMap, $modulesPath, $deployTempBase, $allowMsiMigration)
 
         # Module im Runspace laden (Logging zuerst - wird von MDMDeploy benoetigt)
         Import-Module (Join-Path $modulesPath 'Logging.psm1')   -Force -ErrorAction Stop
@@ -2911,6 +2990,7 @@ function Invoke-MDMDeploy {
                         AvailableForAllUsers = $availableAll
                     }
                     if ($forceDeploy) { $publishParams['Force'] = $true }
+                    if ($allowMsiMigration) { $publishParams['AllowMsiMigration'] = $true }
                     $result = Publish-NextExamToIntune @publishParams
 
                     $results += @{ Role = $role; Success = $result.Success; Message = $result.Message; Version = $msiInfo.Version; Action = $result.Action }
@@ -2927,7 +3007,7 @@ function Invoke-MDMDeploy {
             }
         }
         return ,$results
-    }).AddArgument($msiPaths).AddArgument($accessToken).AddArgument($selectedGroupIds).AddArgument($availableAll).AddArgument($forceDeploy).AddArgument($metadataMap).AddArgument($script:ModulesPath).AddArgument($deployTempBase)
+    }).AddArgument($msiPaths).AddArgument($accessToken).AddArgument($selectedGroupIds).AddArgument($availableAll).AddArgument($forceDeploy).AddArgument($metadataMap).AddArgument($script:ModulesPath).AddArgument($deployTempBase).AddArgument($allowMsiMigration)
 
     $ps.Runspace = $rs
     $handle = $ps.BeginInvoke()
@@ -3139,6 +3219,36 @@ $script:lblClientShare   = Get-UI 'lblClientShare'
 $script:btnClientRefresh = Get-UI 'btnClientRefresh'
 $script:lstClients       = Get-UI 'lstClients'
 $script:btnClientClear   = Get-UI 'btnClientClear'
+$script:lblClientSummary = Get-UI 'lblClientSummary'
+
+# Auswertung: je Rolle wie viele auf dem aktuellen Stand (hoechste Zielversion im Share) und wie viele auf welcher Version
+function Get-NEMVer([string]$V) { $o = $null; if ([Version]::TryParse(("$V".Trim() -replace '[^\d\.]', ''), [ref]$o)) { return $o }; return $null }
+function Format-NEMClientSummary($Rows) {
+    $rows = @($Rows | Where-Object { $_ })
+    if (-not $rows.Count) { return [pscustomobject]@{ Text = 'Keine Clients im Status-Share.'; AllOk = $true } }
+    $parts = @(); $allOk = $true
+    foreach ($g in @($rows | Group-Object { if ("$($_.Role)" -in 'Student', 'Teacher') { "$($_.Role)" } else { '?' } } | Sort-Object @{ Expression = { if ($_.Name -eq '?') { 'zzz' } else { $_.Name } } })) {
+        $items = @($g.Group)
+        if ($g.Name -eq '?') { $parts += "Fehlerhaft/unlesbar: $($items.Count)"; $allOk = $false; continue }
+        # aktueller Stand = hoechste Zielversion (Version im Share), sonst hoechste installierte
+        $cur = @($items | ForEach-Object { Get-NEMVer $_.Target } | Where-Object { $_ } | Sort-Object -Descending)[0]
+        if (-not $cur) { $cur = @($items | ForEach-Object { Get-NEMVer $_.Installed } | Where-Object { $_ } | Sort-Object -Descending)[0] }
+        $ok = @($items | Where-Object { $v = Get-NEMVer $_.Installed; $v -and $cur -and $v -eq $cur }).Count
+        $rest = @($items | Where-Object { $v = Get-NEMVer $_.Installed; -not ($v -and $cur -and $v -eq $cur) } |
+            Group-Object { $v = Get-NEMVer $_.Installed; if ($v) { "$v" } elseif ("$($_.Installed)".Trim() -and "$($_.Installed)" -ne '-') { "$($_.Installed)" } else { 'nicht installiert' } } |
+            Sort-Object @{ Expression = { $x = Get-NEMVer $_.Name; if ($x) { $x } else { [Version]'0.0' } } } -Descending |
+            ForEach-Object { "$($_.Count)x $($_.Name)" })
+        if ($rest.Count) { $allOk = $false }
+        $parts += "$($g.Name): $ok von $($items.Count) aktuell ($(if ($cur) { $cur } else { '?' }))$(if ($rest.Count) { ' - ' + ($rest -join ', ') })"
+    }
+    return [pscustomobject]@{ Text = ($parts -join '   |   '); AllOk = $allOk }
+}
+function Set-NEMClientSummary($Rows) {
+    if (-not $script:lblClientSummary) { return }
+    $s = Format-NEMClientSummary $Rows
+    $script:lblClientSummary.Text = $s.Text
+    $script:lblClientSummary.Foreground = $(if ($s.AllOk) { '#6CCB5F' } else { '#F0A30A' })
+}
 
 # Mehrere Tasks mit demselben Status-Share (z.B. zwei Schulen auf einem gemeinsamen Schulserver):
 # Die Status-JSONs enthalten keinen Task -> pro Task nur Rechner aus den AD-OUs dieses Tasks anzeigen.
@@ -3214,6 +3324,7 @@ function Get-NEMTaskClientRows($Task) {
 
 function Refresh-ClientsList {
     $t = $script:cmbClientTask.SelectedItem
+    if ($script:lblClientSummary) { $script:lblClientSummary.Text = '' }
     if (-not $t) { $script:lstClients.ItemsSource = @(); $script:lblClientShare.Text = ''; return }
     if (-not $t.StatusSharePath) {
         $script:lstClients.ItemsSource = @()
@@ -3223,6 +3334,7 @@ function Refresh-ClientsList {
     try {
         $i = Get-NEMTaskClientRows $t
         $script:lstClients.ItemsSource = @($i.Rows)
+        Set-NEMClientSummary $i.Rows
         if (-not $i.Shared) { $script:lblClientShare.Text = $t.StatusSharePath }
         elseif ($i.Err) { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, NICHT gefiltert ($($i.Err))" }
         else { $script:lblClientShare.Text = "$($t.StatusSharePath)  -  gemeinsam mit anderem Task, gefiltert nach $($i.Source): $(@($i.Rows).Count) von $($i.Total)" }

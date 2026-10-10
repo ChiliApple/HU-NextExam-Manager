@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Config-Modul fuer HU-NextExam-Manager. DPAPI-verschluesselt, per-User.
@@ -31,6 +31,8 @@ function Get-DefaultConfig {
             AutoPullEnabled      = $false
             AutoPullScheduleTime = '03:00'
             IncludePrerelease    = $false  # Wenn $true: auch Next-Exam Pre-Releases beruecksichtigen
+            MsiTrustedPublisher  = 'Open Source Open Schools (OSOS) Austria'  # Herausgeber (O= bzw. CN=) der Next-Exam-MSIs - nur gueltig signierte MSIs dieses Herausgebers werden verteilt
+            MsiTrustedThumbprints = @()    # optional: zusaetzlich nur diese Zertifikats-Fingerabdruecke erlauben (leer = jeder gueltige des Herausgebers)
             GitHubToken          = ''  # Optional: GitHub PAT fuer 5000 API-Calls/h statt 60
             Window               = [PSCustomObject]@{
                 Left   = $null
@@ -57,8 +59,8 @@ function New-TaskEntry {
     param(
         [Parameter(Mandatory)][string]$DisplayName
     )
-    $id = ($DisplayName -replace '[^a-zA-Z0-9\-]', '-').ToLower()
-    if (-not $id) { $id = 'task-' + [Guid]::NewGuid().ToString('N').Substring(0,8) }
+    # Id immer eindeutig (frueher aus dem Anzeigenamen - "BG Nord" und "BG-Nord" ergaben dieselbe Id)
+    $id = 'task-' + [Guid]::NewGuid().ToString('N')
     [PSCustomObject]@{
         Id                      = $id
         DisplayName             = $DisplayName
@@ -163,6 +165,17 @@ function Load-Config {
         $cfg | Add-Member -NotePropertyName 'Tasks' -NotePropertyValue @($cfg.Schools) -Force
         $cfg.PSObject.Properties.Remove('Schools')
         $migrated = $true
+    }
+    # Doppelte/leere Task-Ids (aeltere Versionen leiteten die Id aus dem Namen ab) eindeutig machen
+    $seenIds = @{}
+    foreach ($t in @($cfg.Tasks)) {
+        if (-not $t) { continue }
+        $tid = "$($t.Id)"
+        if (-not $tid -or $seenIds.ContainsKey($tid.ToLowerInvariant())) {
+            $t | Add-Member -NotePropertyName 'Id' -NotePropertyValue ('task-' + [Guid]::NewGuid().ToString('N')) -Force
+            $migrated = $true
+        }
+        $seenIds["$($t.Id)".ToLowerInvariant()] = $true
     }
     # Default-Felder auf existierende Tasks auffuellen
     $tmpl = New-TaskEntry -DisplayName 'dummy'

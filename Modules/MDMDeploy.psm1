@@ -147,6 +147,7 @@ function Get-MDMTokenClientCredentials {
             ExpiresIn   = $resp.expires_in
             TokenType   = $resp.token_type
             ObtainedAt  = (Get-Date)
+            TenantId    = "$TenantId"
         }
     } catch {
         $msg = "Client-Credentials-Token fehlgeschlagen (Tenant: $TenantId): $_"
@@ -223,6 +224,7 @@ function Get-MDMTokenDeviceCode {
                 ExpiresIn   = $resp.expires_in
                 TokenType   = $resp.token_type
                 ObtainedAt  = (Get-Date)
+                TenantId    = "$TenantId"
             }
         } catch {
             $err = $_.ErrorDetails.Message
@@ -437,6 +439,7 @@ function Get-MDMTokenAuthCode {
             ExpiresIn   = $resp.expires_in
             TokenType   = $resp.token_type
             ObtainedAt  = (Get-Date)
+            TenantId    = "$TenantId"
         }
     } catch {
         $msg = "Auth-Code-Token-Austausch fehlgeschlagen (Tenant: $TenantId): $_"
@@ -537,8 +540,10 @@ function Invoke-GraphRequest {
             if ($_.Exception.Response) {
                 $statusCode = [int]$_.Exception.Response.StatusCode
             }
-            # 429 Too Many Requests oder 503/504 → Retry
-            if ($statusCode -in @(429, 503, 504) -and $attempt -lt $MaxRetries) {
+            # 429 Too Many Requests oder 503/504 -> Retry. Anlegen (POST) nur bei 429 wiederholen: bei 503/504 kann
+            # Graph das Objekt trotzdem angelegt haben - ein zweiter POST erzeugt dann eine doppelte App/Content-Version
+            $retryCodes = if ($Method -eq 'POST') { @(429) } else { @(429, 503, 504) }
+            if ($statusCode -in $retryCodes -and $attempt -lt $MaxRetries) {
                 $wait = 5 * $attempt
                 if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers['Retry-After']) {
                     $ra = $_.Exception.Response.Headers['Retry-After']
@@ -722,9 +727,14 @@ function Get-NextExamIntuneApp {
     $filter = "contains(displayName,'$DisplayNameFilter')"
     $uri = "$script:GraphBaseUrl/deviceAppManagement/mobileApps?`$filter=$filter"
 
-    $result = Invoke-GraphRequest -AccessToken $AccessToken -Uri $uri
     $allApps = @()
-    if ($result.value) { $allApps = @($result.value) }
+    $n = 0
+    while ($uri -and $n -lt 50) {
+        $result = Invoke-GraphRequest -AccessToken $AccessToken -Uri $uri
+        if ($result.value) { $allApps += @($result.value) }
+        $uri = $result.'@odata.nextLink'; $n++
+    }
+    if ($uri) { throw "Intune-App-Suche: Ergebnis unvollstaendig (mehr als $n Seiten) - abgebrochen" }
 
     # Client-seitig auf MSI + Win32 filtern und Name mit Regex pruefen
     $pattern = 'next[\s\-_]?exam'
@@ -734,12 +744,20 @@ function Get-NextExamIntuneApp {
         $_.displayName -match [regex]::Escape($DisplayNameFilter)
     })
 
+    # Nur der EXAKTE Name zaehlt (das Tool legt die App immer als "Next-Exam-<Rolle>" an).
+    # Aehnlich benannte Apps (z.B. "Next-Exam-Student (alt)" eines Kollegen) werden nie angefasst.
+    $others = @($apps | Where-Object { "$($_.displayName)".Trim() -ine $DisplayNameFilter })
+    if ($others.Count) { Write-Log "Aehnlich benannte Apps werden ignoriert: $(($others | ForEach-Object { "$($_.displayName) ($($_.id))" }) -join '; ')" -Level INFO -Source 'MDM' }
+    $apps = @($apps | Where-Object { "$($_.displayName)".Trim() -ieq $DisplayNameFilter })
     if ($apps.Count -eq 0) {
         Write-Log "Keine Intune-App gefunden fuer '$DisplayNameFilter'" -Level INFO -Source 'MDM'
         return $null
     }
     if ($apps.Count -gt 1) {
-        Write-Log "WARNUNG: $($apps.Count) Apps gefunden fuer '$DisplayNameFilter' - verwende erste" -Level WARN -Source 'MDM'
+        # nicht raten: welche App aktualisiert/geloescht wird, muss eindeutig sein
+        $list = ($apps | ForEach-Object { "$($_.id) [$("$($_.'@odata.type')" -replace '#microsoft.graph.', ''), geaendert $($_.lastModifiedDateTime)]" }) -join '; '
+        Write-Log "Mehrere Intune-Apps '$DisplayNameFilter': $list" -Level ERROR -Source 'MDM'
+        throw "Es gibt $($apps.Count) Intune-Apps mit dem Namen '$DisplayNameFilter' ($list). Bitte im Intune-Portal die ueberzaehlige App loeschen oder umbenennen - das Tool aktualisiert/loescht keine App, solange das nicht eindeutig ist."
     }
     $app = $apps[0]
 
@@ -1146,11 +1164,13 @@ function Complete-IntuneFileUpload {
 
     # Warten bis Commit verarbeitet
     $fileUri = "$script:GraphBaseUrl/deviceAppManagement/mobileApps/$AppId/microsoft.graph.win32LobApp/contentVersions/$ContentVersionId/files/$FileId"
+    $committed = $false
     for ($i = 0; $i -lt $script:PollMaxRetries; $i++) {
         Start-Sleep -Seconds $script:PollInterval
         $file = Invoke-GraphRequest -AccessToken $AccessToken -Uri $fileUri
         if ($file.uploadState -eq 'commitFileSuccess') {
             Write-Log "File-Commit erfolgreich (File: $FileId)" -Level INFO -Source 'MDM'
+            $committed = $true
             break
         }
         if ($file.uploadState -eq 'commitFileFailed') {
@@ -1158,6 +1178,8 @@ function Complete-IntuneFileUpload {
         }
         Write-Log "  Commit-State: $($file.uploadState) - warte..." -Level DEBUG -Source 'MDM'
     }
+    # Zeitueberschreitung ist KEIN Erfolg: ohne bestaetigten Commit keine neue Inhaltsversion setzen
+    if (-not $committed) { throw "File-Commit nach $($script:PollMaxRetries * $script:PollInterval) s nicht bestaetigt (File: $FileId, State: $($file.uploadState)) - Inhalt nicht uebernommen" }
 
     # App mit committedContentVersion aktualisieren
     $patchUri = "$script:GraphBaseUrl/deviceAppManagement/mobileApps/$AppId"
@@ -1283,6 +1305,7 @@ function Publish-NextExamToIntune {
         [string[]]$RequiredGroupIds = @(),
         [bool]$AvailableForAllUsers = $true,
         [switch]$Force,
+        [switch]$AllowMsiMigration,   # alte windowsMobileMSI-App loeschen und als win32LobApp neu anlegen (nur nach Rueckfrage)
         [scriptblock]$OnProgress
     )
     $steps = 6
@@ -1306,6 +1329,7 @@ function Publish-NextExamToIntune {
     try {
         # --- Step 1: Bestehende App suchen ---
         & $progress 1 "Suche bestehende App: $($AppMetadata['displayName'])"
+        $pendingUpdates = $null   # Metadaten (u.a. displayVersion) erst NACH erfolgreichem Upload setzen
         $existingApp = Get-NextExamIntuneApp -AccessToken $AccessToken -DisplayNameFilter $AppMetadata['displayName']
 
         # --- Step 2: Versions-Vergleich ---
@@ -1335,8 +1359,15 @@ function Publish-NextExamToIntune {
             & $progress 3 'Neue Win32-App anlegen'
             $app = New-NextExamIntuneApp -AccessToken $AccessToken -AppMetadata $AppMetadata
             $report.Action = 'Created'
+        } elseif ($existingApp.appType -eq '#microsoft.graph.windowsMobileMSI' -and -not $AllowMsiMigration) {
+            # Loeschen nur nach ausdruecklicher Bestaetigung (die App verliert dabei ihre Zuweisungen)
+            $report.Action = 'Blocked'
+            $report.AppId = $existingApp.id
+            $report.Message = "Vorhandene MSI-App '$($existingApp.displayName)' ($($existingApp.id)) muesste geloescht und als Win32-App neu angelegt werden - nicht bestaetigt, nichts geaendert. Zuerst 'Status pruefen', dann erneut deployen und die Rueckfrage bestaetigen."
+            Write-Log $report.Message -Level WARN -Source 'MDM'
+            return [PSCustomObject]$report
         } elseif ($existingApp.appType -eq '#microsoft.graph.windowsMobileMSI') {
-            # Bestehende App ist windowsMobileMSI -> loeschen und als win32LobApp neu erstellen
+            # Bestehende App ist windowsMobileMSI -> loeschen und als win32LobApp neu erstellen (bestaetigt)
             & $progress 3 "App-Migration: windowsMobileMSI -> win32LobApp (loesche $($existingApp.id))"
             Write-Log "Alte windowsMobileMSI-App loeschen: $($existingApp.displayName) (ID: $($existingApp.id))" -Level WARN -Source 'MDM'
             $deleteUri = "$script:GraphBaseUrl/deviceAppManagement/mobileApps/$($existingApp.id)"
@@ -1359,7 +1390,9 @@ function Publish-NextExamToIntune {
                     value         = [Convert]::ToBase64String($iconBytes)
                 }
             }
-            Update-NextExamIntuneAppMetadata -AccessToken $AccessToken -AppId $existingApp.id -Updates $updates
+            # NICHT jetzt setzen: scheitert der Upload, staende sonst schon die neue Version in Intune und der naechste
+            # Deploy wuerde mit "bereits aktuell" uebersprungen
+            $pendingUpdates = $updates
             $app = $existingApp
             $report.Action = 'Updated'
         }
@@ -1386,6 +1419,7 @@ function Publish-NextExamToIntune {
             Send-AzureBlobChunks -FilePath $enc.EncryptedFilePath -AzureStorageUri $fileReady.azureStorageUri
             Complete-IntuneFileUpload -AccessToken $AccessToken -AppId $app.id `
                 -ContentVersionId $cv.id -FileId $cf.id -EncryptionInfo $enc.EncryptionInfo
+            if ($pendingUpdates) { Update-NextExamIntuneAppMetadata -AccessToken $AccessToken -AppId $app.id -Updates $pendingUpdates }
 
         } finally {
             # Temp-Verzeichnis aufraeumen

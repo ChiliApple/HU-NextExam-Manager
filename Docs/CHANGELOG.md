@@ -1,5 +1,66 @@
 # Changelog
 
+## v3.3.1 (2026-10-10)
+
+Korrekturen aus der Code-Pruefung (alle HOCH-Befunde und mehrere MITTEL-Befunde).
+
+### Wiederhergestellt
+- **Auswertung unter der Clients-Liste** aus v3.2.4 (z.B. `Student: 25 von 28 aktuell (2.1.0.3) - 2x 2.1.0.2`,
+  gruen = alle aktuell, orange = Abweichungen). v3.2.4 war nur als Release veroeffentlicht, nicht im Hauptzweig - v3.3.0 wurde
+  ohne diese Aenderung gebaut.
+
+### Wichtig nach dem Update
+- **Install-GPOs neu schreiben:** Das neue Startup-Skript (keine Updates waehrend einer Pruefung) wirkt erst, wenn es in
+  SYSVOL liegt. Reiter GPO: Tasks markieren, **Install-GPOs**. Der GPO-Status zeigt bis dahin *Skript veraltet*.
+- **Next-Exam-MSIs werden nur noch verteilt, wenn sie gueltig vom Herausgeber signiert sind** (Standard:
+  `Open Source Open Schools (OSOS) Austria`). Aendert der Hersteller das Zertifikat oder den Namen, in `config.json`
+  `ToolSettings.MsiTrustedPublisher` anpassen.
+
+### Pruefungstag / Clients (Startup-Skript)
+- **Kein Update, solange Next-Exam laeuft:** Eine stille MSI-Installation beendet laufende Programme (Windows Installer /
+  Restart Manager) - mitten in einer Pruefung haette das den Pruefungsclient geschlossen. Laeuft Next-Exam, wird das Update
+  verschoben (Status *verschoben (laeuft)*) und beim naechsten Lauf nachgeholt.
+- **Sperrdatei `update-freeze.txt`** im Install-Share: solange sie existiert, wird nichts installiert oder aktualisiert
+  (z. B. am Pruefungstag). Datei anlegen = gesperrt, loeschen = frei.
+- **Versionsvergleich numerisch:** `1.2.30` galt bisher als gleich wie `1.2.3` (Praefix-Vergleich) - Updates wurden
+  ausgelassen. Eine aeltere Version im Share wird nicht mehr automatisch installiert (kein Downgrade).
+- **Status zeigt die tatsaechlich installierte Version** (nach einem fehlgeschlagenen Update stand bisher die Ziel-Version
+  als installiert da). msiexec 1641 gilt als Erfolg, 1618 als *verschoben*.
+- **GPO-Status:** *OK* nur noch, wenn Skript, geplante Aufgabe und Abloesung des alten Startup-Skripts vorhanden sind und das
+  Skript in SYSVOL dem Stand des Tools entspricht; sonst *unvollstaendig (...)* bzw. *Skript veraltet*.
+
+### GPOs
+- **Vorhandene GPO gleichen Namens wird nur verwendet, wenn sie vom HU-NextExam-Manager stammt.** Sonst Abbruch mit Hinweis
+  (anderen GPO-Praefix waehlen).
+- **Andere Einstellungen in der Install-GPO bleiben erhalten:** Die CSE-Liste wird ergaenzt statt ersetzt, aus
+  `scripts.ini`/`psscripts.ini` wird nur der eigene alte Eintrag entfernt, in `ScheduledTasks.xml` nur die eigene Aufgabe
+  ersetzt (bisher gingen fremde Skripte, GPP-Aufgaben und Einstellungen anderer Erweiterungen verloren).
+- **Zwei Tasks derselben Domaene mit gleichem GPO-Praefix** werden erkannt: Warnung beim Speichern, GPO erstellen /
+  entfernen / WMI-Filter cleanup werden fuer diese Tasks gesperrt (sie wuerden sich gegenseitig ueberschreiben bzw. loeschen).
+  Wer bisher absichtlich zwei solche Tasks hatte: einem Task einen neuen Praefix geben. Dabei entstehen neue GPOs; die alten
+  bleiben verknuepft, bis sie in der GPMC entfernt werden.
+- Die Rueckfrage beim Entfernen nennt alle vier GPOs (Install und Firewall); WMI-Filter cleanup fragt vorher nach.
+- Task-Ids sind jetzt immer eindeutig (bisher aus dem Namen abgeleitet: "BG Nord" und "BG-Nord" ergaben dieselbe Id).
+
+### Intune / MDM
+- **Token gehoert zum Tenant:** Nach einem Wechsel des MDM-Tenants wurde bisher mit dem Token des vorherigen Tenants
+  gearbeitet (Deploy, Status, Gruppen landeten im falschen Tenant). Jetzt wird beim Wechsel alles verworfen und neu verbunden.
+- **App nur ueber den exakten Namen** `Next-Exam-Student`/`Next-Exam-Teacher`; aehnlich benannte Apps werden nie angefasst.
+  Gibt es den Namen mehrfach, bricht das Tool ab und nennt die Ids, statt eine beliebige App zu aendern.
+- **Alte MSI-App ersetzen (loeschen + neu anlegen) nur nach Rueckfrage** mit Name und Id.
+- Anlegen (POST) wird bei HTTP 503/504 nicht mehr automatisch wiederholt (konnte doppelte Apps erzeugen).
+- Version und Metadaten werden erst nach erfolgreichem Upload gesetzt; ein Upload-Abbruch fuehrt nicht mehr dazu, dass die
+  neue Version spaeter als "bereits aktuell" uebersprungen wird. Zeitueberschreitung beim Commit gilt nicht mehr als Erfolg.
+- Die App-Suche liest alle Ergebnisseiten.
+
+### MSI-Verteilung
+- **Authenticode-Pruefung vor dem Verteilen** (Oberflaeche und Auto-Pull): Signatur gueltig, Herausgeber wie in
+  `ToolSettings.MsiTrustedPublisher`, optional nur bestimmte Zertifikate (`ToolSettings.MsiTrustedThumbprints`). Zusaetzlich
+  Abgleich mit der SHA256-Pruefsumme des GitHub-Releases, wenn GitHub sie liefert.
+- **Verteilen auf den Share ohne Halbzustand:** Kopie unter Hilfsnamen, Pruefsumme vergleichen, dann alte MSI archivieren
+  und umbenennen; `version-*.json` zuletzt. Gleiche Datei wird nicht erneut kopiert.
+- **Auto-Pull meldet Fehler** im Ergebnis der geplanten Aufgabe (Exitcode 1) statt immer 0.
+
 ## v3.3.0 (2026-10-10)
 
 Update-Weg auf den gemeinsamen Standard der HU-Tools gebracht (wie HU-MultiTenant und HUMig). Fuer die Next-Exam-Verteilung an
@@ -36,6 +97,15 @@ den Schulen aendert sich nichts.
 - **Releases:** Ein Push auf main mit neuer Version legt das Vorab-Release (Kanal Test) automatisch an, Text aus diesem
   CHANGELOG; die automatischen Tests haengen die Pruefsummen-Datei an und pruefen danach den Update-Weg einschliesslich
   abgebrochenem Update und Aufraeumen. Es bleiben die letzten 10 Releases erhalten (das aktuelle stabile Release immer).
+
+## v3.2.4 (2026-10-02)
+
+### Neu
+- **Auswertung im Clients-Reiter** unter der Liste, je Rolle: wie viele Clients auf dem
+  aktuellen Stand sind (hoechste Zielversion im Share) und wie viele auf welcher anderen
+  Version bzw. nicht installiert, z.B.
+  `Student: 25 von 28 aktuell (2.1.0.3) - 2x 2.1.0.2, 1x nicht installiert`.
+  Gruen = alle aktuell, orange = Abweichungen.
 
 ## v3.2.3 (2026-10-02)
 
