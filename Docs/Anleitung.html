@@ -328,6 +328,9 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td><b>Prüfsumme</b></td><td>Jedes Release enthält <code>HU-NextExam-Manager-files.sha256</code>: SHA256 aller Dateien, erstellt von den automatischen Tests auf GitHub.</td></tr>
     <tr><td><b>Signatur</b></td><td><code>HU-NextExam-Manager-files.sha256.p7s</code> ist die PKCS#7-Signatur des Herausgebers über die Prüfsummen-Datei. Angeboten und installiert werden nur Releases mit gültiger Signatur des <b>eingebauten</b> Zertifikats (Fingerabdruck <code>1B669AE2…</code>).</td></tr>
     <tr><td><b>Alles oder nichts</b></td><td>Zuerst werden <b>alle</b> Dateien geladen und geprüft, erst dann ersetzt. Stimmt eine Prüfsumme nicht, bleibt alles unverändert.</td></tr>
+    <tr><td><b>Rücksicherung</b> (ab 3.3.0)</td><td>Jede bisherige Datei wird vor dem Ersetzen zu <code>*.pullold</code>; ist eine Datei gesperrt, wird alles zurückgestellt. Bricht das Update mittendrin ab (Absturz, Strom), steht das in <code>Config\pull-journal.json</code>: Das Tool startet dann nicht, sondern bietet an, <code>Pull.ps1</code> auszuführen – das stellt den alten Stand her und aktualisiert neu. Der Auto-Pull setzt in diesem Fall aus.</td></tr>
+    <tr><td><b>Aufräumen</b> (ab 3.3.0)</td><td>Dateien, die es in der neuen Version nicht mehr gibt, werden entfernt – nur solche, die früher per Update installiert wurden (Liste in <code>installed.json</code>). Eigene Dateien, <code>config.json</code>, <code>update.json</code> und die Ordner <code>Config\</code> und <code>Logs\</code> bleiben immer unberührt.</td></tr>
+    <tr><td><b>Programmordner</b> (ab 3.3.0)</td><td>Tool und Auto-Pull laufen mit Administrator- bzw. SYSTEM-Rechten direkt aus dem Programmordner. Bei jedem Start wird geprüft, ob dort nur Administratoren und SYSTEM schreiben dürfen; wenn nicht, wird der Ordner abgesichert (Besitzer Administratoren, Benutzer nur Lesen). Ausgenommen sind Netzlaufwerke und Ordner in Benutzerprofilen. Gelingt das Absichern nicht, fragt das Tool nach; der Auto-Pull bricht ab.</td></tr>
     <tr><td><b>Ergebnis</b></td><td><span class="ui">Dashboard</span> › <i>Tool</i> zeigt Kanal und <i>installiert …, geprüft: Prüfsumme + Signatur (1B669AE2…)</i> – aus <code>installed.json</code>.</td></tr>
   </table>
   <div class="note tip"><b class="h">Was schützt was?</b>Die Prüfsumme erkennt beschädigte oder unterwegs veränderte Downloads. Gegen ein manipuliertes Repository hilft die Signatur – der private Schlüssel liegt nur beim Herausgeber, nie auf GitHub. Geprüft wird die Signatur selbst und der Fingerabdruck des Zertifikats, ohne Online-Sperrlistenprüfung.</div>
@@ -349,7 +352,7 @@ cd $d; .\Pull.ps1</pre></li>
   <h3 id="herausgeber">Ablauf für den Herausgeber</h3>
   <div class="flow"><span>Push</span><i>→</i><span>Vorab-Release</span><i>→</i><span>CI hängt Prüfsumme an</span><i>→</i><span>Release signieren</span><i>→</i><span>im Kanal Test prüfen</span><i>→</i><span>Release freigeben</span></div>
   <ol class="steps">
-    <li>Push ins Repository, daraus entsteht ein <b>Vorab-Release</b>; die automatischen Tests auf GitHub hängen die Prüfsummen-Datei an.</li>
+    <li>Feature-Branch, <code>Config\version.json</code> hochzählen, Abschnitt <code>## vX.Y.Z</code> in <code>Docs\CHANGELOG.md</code>, Pull-Request (die automatischen Tests laufen), Merge auf main. Daraus entsteht automatisch das <b>Vorab-Release</b> mit Prüfsummen-Datei; danach testen die automatischen Tests den Update-Weg.</li>
     <li>Rechtsklick auf <span class="ui">Update</span> › <i>Release signieren (Herausgeber) …</i>. Ein GitHub-Token mit Schreibrecht wird einmal abgefragt und DPAPI-verschlüsselt in <code>%APPDATA%\HU-NextExam\GitHubSignToken.xml</code> gespeichert.</li>
     <li>Im Kanal <b>Test</b> installieren und prüfen.</li>
     <li>Rechtsklick › <i>Release freigeben (Herausgeber) …</i> – wird ohne gültige Signatur verweigert.</li>
@@ -392,6 +395,8 @@ cd $d; .\Pull.ps1</pre></li>
     <tr><td>Next-Exam-Pre-Release wird nicht gefunden</td><td>Haken <span class="ui">Pre-Releases einbeziehen</span> im Reiter <span class="ui">MSI Pull</span>.</td></tr>
     <tr><td>MDM: „App einrichten“ scheitert mit <code>consent_required</code></td><td>Zuerst <span class="ui">Admin-Anmeldung (diese Session)</span> mit Consent für die Organisation – siehe <a href="#appreg">App-Registrierung</a>.</td></tr>
     <tr><td>Pull.ps1: „Kein Schreibzugriff“</td><td>PowerShell als Administrator starten oder Ordnerrechte setzen.</td></tr>
+    <tr><td>„Tool-Update unvollständig“ beim Start</td><td>Das letzte Update wurde abgebrochen. <span class="ui">Ja</span> startet <code>Pull.ps1</code>, das den alten Stand wiederherstellt und neu aktualisiert.</td></tr>
+    <tr><td>„Programmordner nicht geschützt“</td><td>Tool als Administrator starten (über die Verknüpfung bzw. <code>Start.vbs</code>). Hilft das nicht: Rechte des Ordners prüfen – nur Administratoren und SYSTEM sollen schreiben dürfen.</td></tr>
     <tr><td>Tool startet nicht aus der ISE</td><td>Das ist Absicht (WPF stürzt in der ISE ab) – über Verknüpfung, <code>Start.vbs</code> oder powershell.exe starten.</td></tr>
   </table>
 </section>

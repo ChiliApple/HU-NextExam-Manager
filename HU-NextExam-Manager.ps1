@@ -50,23 +50,59 @@ if ($host.Name -eq 'Windows PowerShell ISE Host' -or $psISE) {
     return
 }
 
+# --- Programmordner, Version (Config\version.json), abgebrochenes Update, Schutz des Programmordners ---
+#     gilt fuer die Oberflaeche UND den Auto-Pull (laeuft als geplante Aufgabe, ggf. als SYSTEM)
+$script:RootPath    = $PSScriptRoot
+Import-Module (Join-Path $PSScriptRoot 'Modules\Protect.psm1') -Force -Global -DisableNameChecking -ErrorAction Stop
+$script:ToolVersion = Get-NEMToolVersion $PSScriptRoot
+$script:PullJournal = Join-Path $PSScriptRoot 'Config\pull-journal.json'
+
 # --- AutoPull-Modus: headless (kein UI, kein Konsolen-Verstecken) ---
 if ($AutoPull) {
     $RootPath    = $PSScriptRoot
     $ModulesPath = Join-Path $RootPath 'Modules'
+    # Update wurde abgebrochen (Pull.ps1 stellt beim naechsten Lauf zurueck) -> nicht mit einem Mischstand arbeiten
+    if (Test-Path -LiteralPath $script:PullJournal) {
+        try { Add-Content -Path $script:CrashLog -Value ("[{0}] AutoPull abgebrochen: letztes Tool-Update unvollstaendig (Config\pull-journal.json) - Pull.ps1 ausfuehren" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')) -Encoding UTF8 } catch { }
+        exit 1
+    }
+    # nur ein Auto-Pull je Programmordner gleichzeitig
+    $apMutex = New-Object System.Threading.Mutex($false, (Get-NEMMutexName $PSScriptRoot 'AutoPull'))
+    $apOwn = $false
+    try { $apOwn = $apMutex.WaitOne(0, $false) } catch [System.Threading.AbandonedMutexException] { $apOwn = $true }
+    if (-not $apOwn) { exit 0 }
+    # Programmordner absichern - laeuft der Auto-Pull mit Adminrechten (SYSTEM) und gelingt das nicht: abbrechen
+    $prot = Invoke-NEMAppDirProtection -Root $PSScriptRoot
+    if ($prot.Status -eq 'Failed') {
+        try { Add-Content -Path $script:CrashLog -Value ("[{0}] AutoPull abgebrochen: {1}" -f (Get-Date).ToString('yyyy-MM-dd HH:mm:ss'), $prot.Text) -Encoding UTF8 } catch { }
+        exit 1
+    }
     foreach ($m in 'Logging','Config','MSIPull','AutoPull') {
         Import-Module (Join-Path $ModulesPath "$m.psm1") -Force -Global -DisableNameChecking -ErrorAction Stop
     }
     try {
         Invoke-AutoPullRun -ConfigPath (Join-Path $RootPath 'config.json')
+        if ($prot.Status -ne 'Ok') { Write-Log -Message $prot.Text -Level $(if ($prot.Status -eq 'Fixed') { 'INFO' } else { 'WARN' }) -Source 'AutoPull' }
         exit 0
     } catch {
         exit 1
     }
 }
 
-# --- Single-Instance-Check: wenn Tool schon laeuft, nicht nochmal starten ---
-$script:MutexName = 'Global\HU-NextExam-Manager-Instance'
+# --- Abgebrochenes Tool-Update: nicht starten, solange das Journal existiert (Mischstand alt/neu moeglich) ---
+if (Test-Path -LiteralPath $script:PullJournal) {
+    Add-Type -AssemblyName PresentationFramework -EA SilentlyContinue
+    $jrAns = [System.Windows.MessageBox]::Show(
+        "Das letzte Tool-Update wurde abgebrochen (Config\pull-journal.json).`n`nPull.ps1 stellt den bisherigen Stand wieder her und aktualisiert dann neu.`n`nJetzt Pull.ps1 ausfuehren?",
+        'Tool-Update unvollstaendig', 'YesNo', 'Warning')
+    if ($jrAns -eq 'Yes') {
+        try { Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $PSScriptRoot 'Pull.ps1')`"" -WorkingDirectory $PSScriptRoot | Out-Null } catch { }
+    }
+    exit 1
+}
+
+# --- Single-Instance-Check: eine Instanz je Programmordner ---
+$script:MutexName = Get-NEMMutexName $PSScriptRoot 'App'
 $script:Mutex = New-Object System.Threading.Mutex($false, $script:MutexName)
 try {
     if (-not $script:Mutex.WaitOne(0, $false)) {
@@ -78,6 +114,16 @@ try {
         exit 0
     }
 } catch {}
+
+# --- Programmordner absichern (nur Administratoren/SYSTEM duerfen schreiben) ---
+$script:AppDirProtection = Invoke-NEMAppDirProtection -Root $PSScriptRoot
+if ($script:AppDirProtection.Status -in @('Failed', 'Unsafe')) {
+    Add-Type -AssemblyName PresentationFramework -EA SilentlyContinue
+    $protAns = [System.Windows.MessageBox]::Show(
+        "$($script:AppDirProtection.Text)`n`nOhne diesen Schutz koennen Benutzer im Programmordner Dateien anlegen, die mit Administrator- bzw. SYSTEM-Rechten ausgefuehrt werden (Tool, Auto-Pull, Update).`n`nTool als Administrator starten oder die Ordnerrechte pruefen.`n`nTrotzdem starten?",
+        'Programmordner nicht geschuetzt', 'YesNo', 'Warning')
+    if ($protAns -ne 'Yes') { exit 1 }
+}
 
 # --- Konsolen-Fenster verstecken (WPF-Tool, Console nicht benoetigt) ---
 try {
@@ -107,11 +153,9 @@ function Show-Console {
     }
 }
 
-# --- Tool-Version (wird bei Release hochgezaehlt) ---
-$script:ToolVersion = '3.2.3'
+# --- Tool-Version: Config\version.json (oben gelesen, einzige Quelle) ---
 
 # --- Pfade ---
-$script:RootPath    = $PSScriptRoot
 $script:ModulesPath = Join-Path $script:RootPath 'Modules'
 $script:XamlPath    = Join-Path $script:RootPath 'XAML\MainWindow.xaml'
 
@@ -141,6 +185,9 @@ $script:Config = Load-Config
 # --- Logging initialisieren ---
 Initialize-Log -Path $script:Config.ToolSettings.LogPath -Level $script:Config.ToolSettings.LogLevel
 Write-Log -Message "HU-NextExam-Manager v$($script:ToolVersion) startet" -Level INFO -Source 'Main'
+if ($script:AppDirProtection -and $script:AppDirProtection.Status -ne 'Ok') {
+    Write-Log -Message $script:AppDirProtection.Text -Level $(switch ($script:AppDirProtection.Status) { 'Fixed' { 'INFO' } 'Skipped' { 'INFO' } default { 'WARN' } }) -Source 'Main'
+}
 
 # --- XAML laden (mit Retry falls gerade durch Pull gelockt) ---
 if (-not (Test-Path $script:XamlPath)) { throw "XAML fehlt: $script:XamlPath" }
@@ -3339,10 +3386,17 @@ function Invoke-UpdateCheck {
             Import-Module $lib -Force -DisableNameChecking -ErrorAction Stop
             try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
             if ($useBranch) {
-                $u = "https://raw.githubusercontent.com/$owner/$repo/$branch/HU-NextExam-Manager.ps1?t=$([DateTime]::UtcNow.Ticks)"
-                $r = Invoke-WebRequest $u -Headers @{ 'User-Agent' = 'HU-NextExam-Manager-UpdateCheck' } -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
-                $text = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
-                if ($text -match "\`$script:ToolVersion\s*=\s*'([^']+)'") { return [pscustomobject]@{ Version = $Matches[1]; Tag = "Branch $branch"; Prerelease = $false } }
+                # Version des Branches: Config/version.json (ab 3.3.0), aeltere Staende: $script:ToolVersion im Hauptskript
+                foreach ($f in @('Config/version.json', 'HU-NextExam-Manager.ps1')) {
+                    try {
+                        $u = "https://raw.githubusercontent.com/$owner/$repo/$branch/$($f)?t=$([DateTime]::UtcNow.Ticks)"
+                        $r = Invoke-WebRequest $u -Headers @{ 'User-Agent' = 'HU-NextExam-Manager-UpdateCheck' } -UseBasicParsing -TimeoutSec 20 -ErrorAction Stop
+                        $text = if ($r.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($r.Content) } else { [string]$r.Content }
+                        if ($f -like '*.json') { $v = "$(($text.TrimStart([char]0xFEFF) | ConvertFrom-Json).version)" }
+                        elseif ($text -match "\`$script:ToolVersion\s*=\s*'([^']+)'") { $v = $Matches[1] } else { $v = '' }
+                        if ($v) { return [pscustomobject]@{ Version = $v; Tag = "Branch $branch"; Prerelease = $false } }
+                    } catch { }
+                }
                 return 'ERR:Version im Branch nicht gefunden'
             }
             try { $list = @(Get-HMReleases $owner $repo $token) }
