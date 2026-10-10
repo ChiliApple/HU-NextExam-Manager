@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.3.2 (2026-10-10)
+
+### Behoben
+- **Verknuepfung der Firewall-GPOs wird angezeigt:** Reiter GPO Setup und Dashboard zeigten bei den FW-GPOs nur, ob die GPO
+  und ihre Regeln existieren ("OK (2 Rules)") - nicht, ob sie mit der OU verknuepft ist. Eine nicht verknuepfte FW-GPO wirkt
+  auf keinem PC; Next-Exam loest dann beim Start die Windows-Firewall-Abfrage aus. Jetzt: *OK (2 Rules, verknuepft)*,
+  *NICHT verknuepft (2 Rules)* oder *andere OU*; im Dashboard *pruefen: nicht verknuepft* (Gesamt: Handlungsbedarf).
+- **Verknuepfen prueft nach:** Nach dem Anlegen wird kontrolliert, dass die Verknuepfung an der OU steht; sonst gibt es eine
+  Fehlermeldung statt eines stillen Erfolgs.
+
 ## v3.3.1 (2026-10-10)
 
 Korrekturen aus der Code-Pruefung (alle HOCH-Befunde und mehrere MITTEL-Befunde).

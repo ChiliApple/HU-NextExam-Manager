@@ -798,6 +798,14 @@ function Set-NextExamGPOLink {
     if ($Server) { $linkParams.Server = $Server }
     try { New-GPLink @linkParams -ErrorAction Stop | Out-Null }
     catch { if ($_.Exception.Message -match 'already linked|bereits.*verkn|already\s+has\s+a\s+link') {} else { throw } }
+    # Nachpruefen: die Verknuepfung muss an der OU stehen (sonst meldet die Oberflaeche Erfolg, die GPO wirkt aber nirgends)
+    $ghParams = @{ Target = $OUDistinguishedName; Domain = $DomainFQDN }; if ($Server) { $ghParams.Server = $Server }
+    $ok = $false
+    for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+        try { $ok = [bool]((Get-GPInheritance @ghParams -ErrorAction Stop).GpoLinks | Where-Object { $_.GpoId -eq $gpo.Id }) } catch { }
+        if (-not $ok) { Start-Sleep -Seconds 2 }
+    }
+    if (-not $ok) { throw "Verknuepfung von '$GPOName' mit $OUDistinguishedName ist nach dem Anlegen nicht vorhanden - bitte in der GPMC pruefen" }
 }
 
 function Remove-NextExamInstallGPO {
