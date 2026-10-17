@@ -1,5 +1,18 @@
 # Changelog
 
+## v3.4.1 (2026-10-17)
+
+### Behoben
+- **Dashboard > Clients nach MSI Pull:** PCs mit der Vorversion standen weiter auf *aktuell* und die Zusammenfassung zeigte
+  "Student: x von x aktuell", bis jeder PC neu geprueft hatte - Ziel und Status kamen nur aus der Status-Datei des Clients.
+  Jetzt gilt als Ziel die MSI-Version in der Freigabe des Tasks (`version-student.json` / `version-teacher.json`, wie unter
+  *Tasks*). PCs, die diese Version noch nicht geprueft haben, zeigen *Update ausstehend* (bzw. *aktuell* / *neuer als Share*
+  nach installierter Version); die Meldung des Clients (*installed*, *error*, *verschoben ...*) bleibt, wenn er schon gegen
+  die aktuelle Version geprueft hat. Die Zusammenfassung zaehlt gegen dieselbe Version.
+- **Listen-Spalten:** passen sich nach jedem Laden an den Inhalt an (vorher feste Breiten, Inhalte abgeschnitten). Die
+  Spaltenbreite laesst sich wieder per Rand ziehen aendern (Doppelklick auf den Rand = an Inhalt anpassen) - im dunklen
+  Header-Template fehlte der Griff. Spalten lassen sich per Ueberschrift verschieben.
+
 ## v3.4.0 (2026-10-10)
 
 Restliche Befunde aus der Code-Pruefung (MITTEL/NIEDRIG) und Daten-Ordner `Config\`.

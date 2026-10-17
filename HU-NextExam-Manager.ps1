@@ -359,6 +359,34 @@ if (Test-Path $script:IconPath) {
 # --- UI-Elemente in Variablen ---
 function Get-UI([string]$Name) { $script:Window.FindName($Name) }
 
+# --- Listen-Spalten an den Inhalt anpassen (v3.4.1) ---
+# Die Spalten hatten feste Breiten. Jetzt: nach jedem neuen Inhalt (ItemsSource) auf den breitesten Eintrag bzw. die
+# Ueberschrift anpassen. Von Hand: Spaltenrand ziehen, Doppelklick auf den Rand = an Inhalt anpassen, Ueberschrift ziehen =
+# Spalte verschieben (Griff PART_HeaderGripper im Header-Template des XAML).
+function Update-NEMListColumns($ListView) {
+    if (-not $ListView -or -not ($ListView.View -is [System.Windows.Controls.GridView])) { return }
+    foreach ($c in @($ListView.View.Columns)) {
+        # erst auf feste Breite, dann wieder auf Auto - sonst misst WPF eine Auto-Spalte nicht neu
+        if ([double]::IsNaN($c.Width)) { $c.Width = $c.ActualWidth }
+        $c.Width = [double]::NaN
+    }
+}
+$script:NEMAutoFitHandler = [System.EventHandler]{ param($s, $e) try { Update-NEMListColumns $s } catch { } }
+try {
+    $dpdItems = [System.ComponentModel.DependencyPropertyDescriptor]::FromProperty(
+        [System.Windows.Controls.ItemsControl]::ItemsSourceProperty, [System.Windows.Controls.ListView])
+    foreach ($n in @($xaml.SelectNodes("//*[local-name()='ListView']"))) {
+        $nm = $n.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
+        if (-not $nm) { continue }
+        $lv = Get-UI $nm
+        if (-not ($lv -is [System.Windows.Controls.ListView])) { continue }
+        if ($lv.View -is [System.Windows.Controls.GridView]) { $lv.View.AllowsColumnReorder = $true }
+        $dpdItems.AddValueChanged($lv, $script:NEMAutoFitHandler)
+    }
+} catch {
+    Write-Log -Message "Spalten-Anpassung nicht aktiv: $($_.Exception.Message)" -Level WARN -Source 'UI'
+}
+
 $script:lblVersion  = Get-UI 'lblVersion'
 $script:tabMain     = Get-UI 'tabMain'
 $script:lblStatus        = Get-UI 'lblStatus'
@@ -3335,20 +3363,41 @@ function Get-NEMTaskComputerNames($Task) {
     if (-not $err) { $script:ClientOuCache[$key] = $r }
     return $r
 }
-# Status-Zeilen des Tasks (bei gemeinsamem Status-Share nach OU gefiltert)
+# MSI-Version in den Freigaben des Tasks (version-student.json / version-teacher.json) - '' wenn nicht lesbar
+function Get-NEMTaskShareVersions($Task) {
+    $v = @{ Student = ''; Teacher = '' }
+    foreach ($role in 'Student', 'Teacher') {
+        $p = "$($Task."$($role)SharePath")".Trim()
+        if (-not $p) { continue }
+        try {
+            if (Test-Path -LiteralPath $p -ErrorAction SilentlyContinue) {
+                $vi = Read-ShareVersionInfo -SharePath $p -Role $role
+                if ($vi -and "$($vi.Version)".Trim()) { $v[$role] = "$($vi.Version)".Trim() }
+            }
+        } catch { }
+    }
+    return $v
+}
+# Status-Zeilen des Tasks (bei gemeinsamem Status-Share nach OU gefiltert).
+# Ziel/Status werden gegen die MSI-Version in den Freigaben des Tasks geprueft (nicht nur die Meldung des Clients).
 function Get-NEMTaskClientRows($Task) {
     $rows = @(Read-ClientStatus -Path $Task.StatusSharePath)
-    $info = [pscustomobject]@{ Rows = $rows; Shared = $false; Total = $rows.Count; Err = ''; Source = '' }
-    if (-not (Test-NEMSharedStatusPath $Task)) { return $info }
-    $info.Shared = $true
-    $ad = Get-NEMTaskComputerNames $Task
-    if ($ad.Err) { $info.Err = $ad.Err; return $info }
-    $info.Source = $ad.Source
-    $info.Rows = @($rows | Where-Object {
-        $n = "$($_.ComputerName)"
-        if ("$($_.Role)" -eq '-') { $n = $n -replace '-(Student|Teacher)$', '' }   # Parse-Fehler-Zeile: Name aus Dateiname
-        $ad.Names.Contains($n)
-    })
+    $sv = Get-NEMTaskShareVersions $Task
+    $info = [pscustomobject]@{ Rows = $rows; Shared = $false; Total = $rows.Count; Err = ''; Source = ''; ShareVersions = $sv }
+    if (Test-NEMSharedStatusPath $Task) {
+        $info.Shared = $true
+        $ad = Get-NEMTaskComputerNames $Task
+        if ($ad.Err) { $info.Err = $ad.Err }
+        else {
+            $info.Source = $ad.Source
+            $info.Rows = @($rows | Where-Object {
+                $n = "$($_.ComputerName)"
+                if ("$($_.Role)" -eq '-') { $n = $n -replace '-(Student|Teacher)$', '' }   # Parse-Fehler-Zeile: Name aus Dateiname
+                $ad.Names.Contains($n)
+            })
+        }
+    }
+    $info.Rows = @(Update-ClientStatusTarget -Rows $info.Rows -StudentVersion $sv.Student -TeacherVersion $sv.Teacher)
     return $info
 }
 

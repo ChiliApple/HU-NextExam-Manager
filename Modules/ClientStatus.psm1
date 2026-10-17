@@ -276,6 +276,60 @@ function Clear-ClientStatus {
     return $result
 }
 
+function Update-ClientStatusTarget {
+    <#
+    .SYNOPSIS
+        Gleicht die Status-Zeilen der Clients mit der MSI-Version in den Freigaben des Tasks ab.
+    .DESCRIPTION
+        v3.4.1: Ziel und Status in den Status-JSONs stammen vom letzten Lauf des Clients. Nach einem MSI-Pull stand dort
+        bis zum naechsten Client-Start noch die alte Version und "aktuell". Hier wird das Ziel durch die Version im
+        Share ersetzt (Student/Teacher getrennt):
+          - Client hat bereits gegen diese Version geprueft -> seine Meldung bleibt (aktuell, error, verschoben ...)
+          - sonst: installiert = Share -> 'aktuell', neuer -> 'neuer als Share', nicht installiert/aelter -> 'Update ausstehend'
+        Ohne Share-Version (Freigabe fehlt/nicht lesbar) bleibt die Zeile unveraendert.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()][AllowEmptyCollection()][object[]]$Rows,
+        [string]$StudentVersion = '',
+        [string]$TeacherVersion = ''
+    )
+    $toVer = {
+        param([string]$V)
+        $o = $null
+        if ([Version]::TryParse(("$V".Trim() -replace '[^\d\.]', ''), [ref]$o)) { return $o }
+        return $null
+    }
+    $share = @{ Student = "$StudentVersion".Trim(); Teacher = "$TeacherVersion".Trim() }
+    foreach ($r in @($Rows | Where-Object { $_ })) {
+        $role = "$($r.Role)"
+        $want = $(if ($share.ContainsKey($role)) { $share[$role] } else { '' })
+        $vWant = & $toVer $want
+        if (-not $vWant) { $r; continue }
+        $vClientTarget = & $toVer "$($r.Target)"
+        $vHave = & $toVer "$($r.Installed)"
+        $action = "$($r.LastAction)"
+        if (-not ($vClientTarget -and $vClientTarget -eq $vWant)) {
+            $action = $(if ($vHave -and $vHave -eq $vWant) { 'aktuell' }
+                        elseif ($vHave -and $vHave -gt $vWant) { 'neuer als Share' }
+                        else { 'Update ausstehend' })
+        } elseif ($action -eq 'aktuell' -and -not ($vHave -and $vHave -eq $vWant)) {
+            $action = 'Update ausstehend'   # Meldung passt nicht zur installierten Version
+        }
+        [PSCustomObject]@{
+            ComputerName = $r.ComputerName
+            Role         = $r.Role
+            Installed    = $r.Installed
+            Target       = $want
+            ClientTarget = $r.Target
+            LastCheck    = $r.LastCheck
+            LastAction   = $action
+            FileModified = $r.FileModified
+            File         = $r.File
+        }
+    }
+}
+
 if ($ExecutionContext.SessionState.Module) {
-    Export-ModuleMember -Function Initialize-StatusShare, Read-ClientStatus, Clear-ClientStatus
+    Export-ModuleMember -Function Initialize-StatusShare, Read-ClientStatus, Clear-ClientStatus, Update-ClientStatusTarget
 }
