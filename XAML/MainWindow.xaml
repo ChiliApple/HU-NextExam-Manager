@@ -241,13 +241,23 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="GridViewColumnHeader">
-                        <Border x:Name="H" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="H" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            </Border>
+                            <!-- Griff am rechten Rand: Spaltenbreite ziehen, Doppelklick = an Inhalt anpassen (Name ist Pflicht fuer WPF) -->
+                            <Thumb x:Name="PART_HeaderGripper" HorizontalAlignment="Right" Width="8" Margin="0,0,-4,0" Cursor="SizeWE">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Border Background="Transparent"/>
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="H" Property="Background" Value="#3F3F46"/>
@@ -408,7 +418,7 @@
                                 </ListView.View>
                             </ListView>
                             <TextBlock x:Name="lblClientSummary" Grid.Row="2" Margin="2,6,0,0" TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#C0C0C0"
-                                       ToolTip="Auswertung der angezeigten Clients: wie viele auf dem aktuellen Stand (hoechste Zielversion im Share) und wie viele auf welcher anderen Version"/>
+                                       ToolTip="Auswertung der angezeigten Clients: wie viele auf dem aktuellen Stand (MSI-Version in der Freigabe des Tasks) und wie viele auf welcher anderen Version"/>
                         </Grid>
                     </GroupBox>
 

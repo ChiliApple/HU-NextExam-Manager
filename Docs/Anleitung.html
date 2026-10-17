@@ -271,6 +271,8 @@ cd $d; .\Pull.ps1</pre></li>
     <li><span class="ui g">Install-GPOs</span> erneut ausführen – erst dann kennt der Client-Task den Status-Pfad.</li>
     <li>Nach dem nächsten Lauf am Client erscheint er im <span class="ui">Dashboard</span> unter <i>Clients</i>.</li>
   </ol>
+  <p><b>Ziel</b> ist immer die MSI-Version in der Freigabe des Tasks (wie unter <i>Tasks</i>), nicht die Version, die der Client beim letzten Lauf gesehen hat. Nach einem MSI Pull steht bei PCs, die die neue Version noch nicht geprüft haben, deshalb sofort <i>Update ausstehend</i> – bis sie beim nächsten Start bzw. um 07:30 aktualisieren. Weitere Werte: <i>aktuell</i>, <i>neuer als Share</i> sowie die Meldung des Clients (<i>installed</i>, <i>error</i>, <i>verschoben …</i>, <i>gesperrt …</i>), wenn er bereits gegen die aktuelle Version geprüft hat. Die Zeile darunter zählt je Rolle, wie viele PCs auf dieser Version sind.</p>
+  <p>Spalten aller Listen passen sich an den Inhalt an. Rand der Überschrift ziehen = Breite ändern, Doppelklick auf den Rand = an Inhalt anpassen, Überschrift ziehen = Spalte verschieben.</p>
   <h3 id="aufraeumen">Aufräumen</h3>
   <p><span class="ui r">Aufräumen</span> (neben <span class="ui">Aktualisieren</span>) löscht nach einer Sicherheitsabfrage <b>alle</b> Statusdateien im Status-Share des gewählten Tasks – z. B. wenn nach einer Geräte-Umbenennung alte Rechnernamen hängen bleiben. Die Clients legen ihre Datei beim nächsten Start automatisch neu an.</p>
 </section>
